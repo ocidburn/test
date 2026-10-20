@@ -3,7 +3,7 @@ import type { FetchLike } from '../net/http';
 import { fetchKlosok, type TripResolver } from './klosok';
 import { fetchMpk, type Encoding, type LineSets } from './mpk';
 import { fetchOpenData, mergeWithOpenData } from './open-data';
-import { emptyStatus, type LiveVehicle, type SourceStatus } from './types';
+import { emptyStatus, type LiveVehicle, type SourceDetail, type SourceStatus } from './types';
 
 /** A Kłosok bus this close to a same-line Wrocław record is the same bus. */
 const KLOSOK_DEDUPE_METERS = 300;
@@ -51,14 +51,14 @@ export class LiveTracker {
     this.now = deps.now ?? Date.now;
   }
 
-  private async run(name: SourceName, task: () => Promise<LiveVehicle[]>) {
+  private async run(name: SourceName, task: () => Promise<{ vehicles: LiveVehicle[]; detail?: SourceDetail }>) {
     const at = this.now();
     const status = this.status[name];
     status.at = at;
     try {
-      const vehicles = await task();
+      const { vehicles, detail = null } = await task();
       this.last[name] = { vehicles, at };
-      Object.assign(status, { ok: true, count: vehicles.length, error: null, okAt: at });
+      Object.assign(status, { ok: true, count: vehicles.length, error: null, okAt: at, detail });
     } catch (error) {
       Object.assign(status, { ok: false, error: (error as Error).message });
     }
@@ -77,10 +77,13 @@ export class LiveTracker {
         const lines = await this.deps.lines();
         const result = await fetchMpk(lines, { preferred: this.encoding, fetchImpl, now: this.now(), isTram: (line, hint) => isTram(line, hint) });
         this.encoding = result.encoding;
-        return result.vehicles;
+        return { vehicles: result.vehicles };
       }),
-      this.run('openData', () => fetchOpenData({ fetchImpl, now: this.now(), isTram: (line) => isTram(line) })),
-      this.run('klosok', () => fetchKlosok(resolver, { fetchImpl, now: this.now() })),
+      this.run('openData', async () => {
+        const { vehicles, ...detail } = await fetchOpenData({ fetchImpl, now: this.now(), isTram: (line) => isTram(line) });
+        return { vehicles, detail };
+      }),
+      this.run('klosok', async () => ({ vehicles: await fetchKlosok(resolver, { fetchImpl, now: this.now() }) })),
     ]);
     return this.combine();
   }
@@ -124,5 +127,8 @@ export class LiveTracker {
   }
 }
 
-const structuredCloneStatus = (status: Record<SourceName, SourceStatus>) =>
-  ({ mpk: { ...status.mpk }, openData: { ...status.openData }, klosok: { ...status.klosok } }) as Record<SourceName, SourceStatus>;
+const structuredCloneStatus = (status: Record<SourceName, SourceStatus>): Record<SourceName, SourceStatus> => ({
+  mpk: { ...status.mpk },
+  openData: { ...status.openData },
+  klosok: { ...status.klosok },
+});

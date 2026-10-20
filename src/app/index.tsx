@@ -1,5 +1,5 @@
 import * as Location from 'expo-location';
-import { Link, router, Stack, useFocusEffect } from 'expo-router';
+import { router, Stack, useFocusEffect } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AppState, Pressable, StyleSheet, Text, View } from 'react-native';
 import MapView, { Marker, Polyline, type Region } from 'react-native-maps';
@@ -230,23 +230,28 @@ export default function MapScreen() {
 
       <View style={[styles.top, { paddingTop: insets.top + 8 }]} pointerEvents="box-none">
         <View style={styles.buttons} pointerEvents="box-none">
-          <Link href="/search" asChild>
-            <Pressable style={[styles.button, styles.searchButton, { backgroundColor: theme.surface }]}>
-              <Text style={{ color: theme.muted, fontSize: 16 }}>Поиск остановки</Text>
-            </Pressable>
-          </Link>
-          <Link href="/lines" asChild>
-            <Pressable style={[styles.button, { backgroundColor: filter.length ? theme.accent : theme.surface }]}>
-              <Text style={{ color: filter.length ? '#FFFFFF' : theme.text, fontWeight: '600' }}>
-                {filter.length ? `Линии · ${filter.length}` : 'Линии'}
-              </Text>
-            </Pressable>
-          </Link>
-          <Link href="/settings" asChild>
-            <Pressable style={[styles.button, { backgroundColor: theme.surface }]} accessibilityLabel="Данные">
-              <Text style={{ color: theme.text, fontSize: 16 }}>⋯</Text>
-            </Pressable>
-          </Link>
+          {/* Plain Pressables: a Link with asChild dropped the pill backgrounds on iOS. */}
+          <Pressable
+            onPress={() => router.push('/search')}
+            style={[styles.button, styles.searchButton, { backgroundColor: theme.surface }]}
+          >
+            <Text style={{ color: theme.muted, fontSize: 16 }}>Поиск остановки</Text>
+          </Pressable>
+          <Pressable
+            onPress={() => router.push('/lines')}
+            style={[styles.button, { backgroundColor: filter.length ? theme.accent : theme.surface }]}
+          >
+            <Text style={{ color: filter.length ? '#FFFFFF' : theme.text, fontWeight: '600' }}>
+              {filter.length ? `Линии · ${filter.length}` : 'Линии'}
+            </Text>
+          </Pressable>
+          <Pressable
+            onPress={() => router.push('/settings')}
+            style={[styles.button, { backgroundColor: theme.surface }]}
+            accessibilityLabel="Данные"
+          >
+            <Text style={{ color: theme.text, fontSize: 18, fontWeight: '700' }}>⋯</Text>
+          </Pressable>
         </View>
         <StatusBanner />
         <View style={[styles.chip, { backgroundColor: theme.surface }]}>

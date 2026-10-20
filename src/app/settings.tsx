@@ -2,6 +2,7 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { formatDateKey } from '../core/time/warsaw';
 import { lastCheckedAt } from '../platform/timetable';
+import type { SourceDetail } from '../core/realtime/types';
 import { useLive } from '../state/live';
 import { useTimetable } from '../state/timetable';
 import { StatusBanner } from '../ui/status-banner';
@@ -13,11 +14,42 @@ const formatInstant = (ms: number | null | undefined) => {
   return `${date.toLocaleDateString()} ${date.toLocaleTimeString().slice(0, 5)}`;
 };
 
+/** The portal hands out bare file ids; `…/hdb/download/119/` is file 119. */
+const snapshotFromUrl = (url: string | null) => {
+  if (!url) return '—';
+  const id = /\/(\d+)\/?$/.exec(url)?.[1];
+  return id ? `файл ${id} портала` : url.replace(/^https?:\/\//, '');
+};
+
 const LIVE_SOURCES = [
   ['mpk', 'MPK bus_position'],
   ['openData', 'Open Data (таблица 14)'],
   ['klosok', 'Kłosok GTFS-RT'],
 ] as const;
+
+const REJECTED: Record<string, string> = {
+  line: 'без линии',
+  number: 'без номера',
+  position: 'без координат',
+  time: 'время не читается',
+  stale: 'устарели',
+  future: 'время в будущем',
+};
+
+const formatAge = (seconds: number) =>
+  Math.abs(seconds) < 120 ? `${seconds} с` : Math.abs(seconds) < 7200 ? `${Math.round(seconds / 60)} мин` : `${Math.round(seconds / 3600)} ч`;
+
+/** "из 512 строк: 498 устарели · время как UTC, медиана 2 ч" */
+const formatDetail = (detail: SourceDetail) => {
+  const rejected = Object.entries(detail.rejected)
+    .filter(([, count]) => count)
+    .map(([reason, count]) => `${count} ${REJECTED[reason] ?? reason}`);
+  const parts = [`из ${detail.total} строк${rejected.length ? `: отброшено ${rejected.join(', ')}` : ''}`];
+  if (detail.medianAgeSeconds !== undefined && detail.medianAgeSeconds !== null) {
+    parts.push(`время ${detail.clock === 'utc' ? 'как UTC' : 'варшавское'}, медиана возраста ${formatAge(detail.medianAgeSeconds)}`);
+  }
+  return parts.join(' · ');
+};
 
 const REASONS: Record<string, string> = {
   'installed timetable is the best available': 'Установлено актуальное расписание',
@@ -35,7 +67,7 @@ export default function SettingsScreen() {
   const live = useLive((state) => state.status);
 
   const rows: [string, string][] = [
-    ['Снимок', meta?.sourceName ?? '—'],
+    ['Снимок', meta?.sourceName ?? snapshotFromUrl(meta?.sourceUrl ?? null)],
     ['Действует', meta?.feedStart && meta?.feedEnd ? `${formatDateKey(meta.feedStart)} — ${formatDateKey(meta.feedEnd)}` : '—'],
     ['Импортировано', formatInstant(meta?.importedAt ?? null)],
     ['Проверено', formatInstant(lastCheckedAt())],
@@ -68,15 +100,22 @@ export default function SettingsScreen() {
               ? `${source.count} · ${formatInstant(source.okAt)}`
               : `ошибка: ${source.error ?? '?'}`;
           return (
-            <View key={key} style={[styles.row, { borderColor: theme.border }]}>
-              <Text style={{ color: theme.muted, fontSize: 15 }}>{label}</Text>
-              <Text
-                style={{ color: source && !source.ok && source.at ? theme.danger : theme.text, fontSize: 14, flexShrink: 1, textAlign: 'right' }}
-                selectable
-                numberOfLines={3}
-              >
-                {value}
-              </Text>
+            <View key={key} style={[styles.liveRow, { borderColor: theme.border }]}>
+              <View style={styles.liveLine}>
+                <Text style={{ color: theme.muted, fontSize: 15 }}>{label}</Text>
+                <Text
+                  style={{ color: source && !source.ok && source.at ? theme.danger : theme.text, fontSize: 14, flexShrink: 1, textAlign: 'right' }}
+                  selectable
+                  numberOfLines={3}
+                >
+                  {value}
+                </Text>
+              </View>
+              {source?.ok && source.detail ? (
+                <Text style={{ color: theme.muted, fontSize: 12 }} selectable>
+                  {formatDetail(source.detail)}
+                </Text>
+              ) : null}
             </View>
           );
         })}
@@ -117,6 +156,8 @@ const styles = StyleSheet.create({
     paddingVertical: 11,
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
+  liveRow: { paddingHorizontal: 14, paddingVertical: 11, gap: 4, borderBottomWidth: StyleSheet.hairlineWidth },
+  liveLine: { flexDirection: 'row', justifyContent: 'space-between', gap: 12 },
   button: { marginHorizontal: 16, height: 48, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
   buttonText: { color: '#FFFFFF', fontSize: 16, fontWeight: '600' },
   note: { marginHorizontal: 20, fontSize: 13 },

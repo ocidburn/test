@@ -3,7 +3,7 @@ import { transit_realtime as rt } from 'gtfs-realtime-bindings';
 import { decodeFeed } from '../src/core/realtime/gtfs-rt';
 import { parseKlosokFeed, parseLabel, type TripResolver } from '../src/core/realtime/klosok';
 import { buildBody, fetchMpk, normalizeMpkRow } from '../src/core/realtime/mpk';
-import { mergeWithOpenData, normalizeOpenDataRow, parseWarsawWallClock } from '../src/core/realtime/open-data';
+import { mergeWithOpenData, normalizeOpenDataRow, parseOpenDataRows, parseWarsawWallClock } from '../src/core/realtime/open-data';
 import { matchVariant, nextStop, stopsAlong, type Variant } from '../src/core/realtime/route-match';
 import { LiveTracker } from '../src/core/realtime/tracker';
 import type { LiveVehicle } from '../src/core/realtime/types';
@@ -109,7 +109,7 @@ describe('Open Data table 14', () => {
       brigade: '00407',
       positionAt: Date.parse('2026-06-15T07:59:30+02:00'),
     });
-    expect(normalizeOpenDataRow(row({ Data_Aktualizacji: '2026-06-15 07:58:29' }), { now: NOW, isTram })).toBeNull();
+    expect(normalizeOpenDataRow(row({ Data_Aktualizacji: '2026-06-15 07:57:59' }), { now: NOW, isTram })).toBeNull();
     expect(normalizeOpenDataRow(row({ Data_Aktualizacji: '2026-06-15 08:00:30' }), { now: NOW, isTram })).toBeNull();
     expect(normalizeOpenDataRow(row({ Nr_Boczny: 0 }), { now: NOW, isTram })).toBeNull();
     expect(normalizeOpenDataRow(row({ Ostatnia_Pozycja_Szerokosc: 0, Ostatnia_Pozycja_Dlugosc: 0 }), { now: NOW, isTram })).toBeNull();
@@ -312,5 +312,45 @@ describe('stops along a variant', () => {
     expect(nextStop(stops, 300)?.name).toBe('east');
     expect(nextStop(stops, 690)?.name).toBe('middle-back');
     expect(nextStop(stops, 2000)).toBeNull();
+  });
+});
+
+describe('Open Data diagnostics and clock', () => {
+  const rowAt = (time: unknown, overrides: Record<string, unknown> = {}) => ({
+    Nazwa_Linii: '4',
+    Nr_Boczny: 3012,
+    Brygada: '00407',
+    Ostatnia_Pozycja_Szerokosc: 51.1101,
+    Ostatnia_Pozycja_Dlugosc: 17.0301,
+    Data_Aktualizacji: time,
+    ...overrides,
+  });
+
+  test('timestamps written in UTC are recognised instead of aging every row out', () => {
+    // 07:59:40 Wrocław = 05:59:40 UTC, written without a zone.
+    const rows = [rowAt('2026-06-15 05:59:40'), rowAt('2026-06-15 05:59:50', { Nr_Boczny: 3013 })];
+    const result = parseOpenDataRows(rows, { now: NOW, isTram });
+    expect(result.clock).toBe('utc');
+    expect(result.vehicles).toHaveLength(2);
+    expect(result.vehicles[0].positionAt).toBe(Date.parse('2026-06-15T05:59:40Z'));
+    expect(result.medianAgeSeconds).toBe(20);
+  });
+
+  test('Wrocław time stays the default; every dropped row is counted by reason', () => {
+    const rows = [
+      rowAt('2026-06-15 07:59:40'),
+      rowAt('15.06.2026 07:59:30', { Nr_Boczny: 3013 }),
+      rowAt('2026-06-15 07:50:00', { Nr_Boczny: 3014 }),
+      rowAt('soon', { Nr_Boczny: 3015 }),
+      rowAt('2026-06-15 07:59:40', { Nr_Boczny: 0 }),
+      rowAt('2026-06-15 07:59:40', { Nazwa_Linii: '' }),
+      rowAt('2026-06-15 07:59:40', { Ostatnia_Pozycja_Szerokosc: '51,1101', Nr_Boczny: 3016 }),
+      rowAt(1_781_503_190, { Nr_Boczny: 3017 }),
+    ];
+    const result = parseOpenDataRows(rows, { now: NOW, isTram });
+    expect(result.clock).toBe('warsaw');
+    expect(result.total).toBe(8);
+    expect(result.vehicles.map((v) => v.vehicleNumber)).toEqual(['3012', '3013', '3016', '3017']);
+    expect(result.rejected).toEqual({ time: 1, number: 1, line: 1, stale: 1 });
   });
 });

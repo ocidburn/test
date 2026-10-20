@@ -44,6 +44,15 @@ export type SourceStatus = {
   at: number | null;
   /** Last success, epoch ms. */
   okAt: number | null;
+  /** What the last answer contained and why rows were dropped, when the source can say. */
+  detail: SourceDetail | null;
 };
 
-export const emptyStatus = (): SourceStatus => ({ ok: false, count: 0, error: null, at: null, okAt: null });
+export type SourceDetail = {
+  total: number;
+  rejected: Partial<Record<string, number>>;
+  clock?: 'warsaw' | 'utc';
+  medianAgeSeconds?: number | null;
+};
+
+export const emptyStatus = (): SourceStatus => ({ ok: false, count: 0, error: null, at: null, okAt: null, detail: null });

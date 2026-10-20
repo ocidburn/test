@@ -1,4 +1,4 @@
-import { Link } from 'expo-router';
+import { router } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { FlatList, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
@@ -60,19 +60,20 @@ export default function StopSearchScreen() {
           ) : undefined
         }
         renderItem={({ item }) => (
-          <Link href={{ pathname: '/stop/[name]', params: { name: item.name } }} asChild>
-            <Pressable style={({ pressed }) => [styles.row, { backgroundColor: pressed ? theme.inputBackground : theme.surface }]}>
-              <Text style={[styles.name, { color: theme.text }]}>{item.name}</Text>
-              <View style={styles.lines}>
-                {item.lines.slice(0, 14).map((line) => (
-                  <LineBadge key={line.name} line={line.name} tram={line.tram} size="small" />
-                ))}
-                {item.lines.length > 14 ? (
-                  <Text style={{ color: theme.muted, fontSize: 12 }}>+{item.lines.length - 14}</Text>
-                ) : null}
-              </View>
-            </Pressable>
-          </Link>
+          <Pressable
+            onPress={() => router.push({ pathname: '/stop/[name]', params: { name: item.name } })}
+            style={({ pressed }) => [styles.row, { backgroundColor: pressed ? theme.inputBackground : theme.surface }]}
+          >
+            <Text style={[styles.name, { color: theme.text }]}>{item.name}</Text>
+            <View style={styles.lines}>
+              {item.lines.slice(0, 14).map((line) => (
+                <LineBadge key={line.name} line={line.name} tram={line.tram} size="small" />
+              ))}
+              {item.lines.length > 14 ? (
+                <Text style={{ color: theme.muted, fontSize: 12 }}>+{item.lines.length - 14}</Text>
+              ) : null}
+            </View>
+          </Pressable>
         )}
       />
     </View>
