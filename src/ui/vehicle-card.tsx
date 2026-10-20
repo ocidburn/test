@@ -22,10 +22,14 @@ const delayText = (seconds: number) => {
   return minutes > 0 ? `опаздывает на ${minutes} мин` : `раньше на ${-minutes} мин`;
 };
 
+const etaText = (seconds: number) => (seconds < 60 ? 'подъезжает' : `через ${Math.round(seconds / 60)} мин`);
+
 export function VehicleCard({
   vehicle,
   headsign,
   nextStop,
+  nextStopEtaSeconds,
+  delaySeconds,
   now,
   onClose,
 }: {
@@ -33,6 +37,10 @@ export function VehicleCard({
   /** From the feed, or from the route variant the vehicle was matched to. */
   headsign: string | null;
   nextStop: string | null;
+  /** Remaining scheduled running time to the next stop, when the run is known. */
+  nextStopEtaSeconds: number | null;
+  /** The feed's delay, or the one worked out from the schedule. Null when unknown. */
+  delaySeconds: number | null;
   now: number;
   onClose: () => void;
 }) {
@@ -40,7 +48,8 @@ export function VehicleCard({
   const details = [
     vehicle.vehicleNumber ? `№ ${vehicle.vehicleNumber}` : null,
     vehicle.brigade ? `бриг. ${vehicle.brigade}` : null,
-    SOURCES[vehicle.source],
+    // Where the delay came from: the feed states it, or it was inferred from the timetable.
+    vehicle.delaySeconds !== null ? SOURCES[vehicle.source] : delaySeconds !== null ? `${SOURCES[vehicle.source]} + расписание` : SOURCES[vehicle.source],
     age(vehicle.positionAt, now),
   ].filter(Boolean);
 
@@ -55,6 +64,7 @@ export function VehicleCard({
           {nextStop ? (
             <Text style={[styles.sub, { color: theme.muted }]} numberOfLines={1}>
               следующая: {nextStop}
+              {nextStopEtaSeconds !== null ? ` · ${etaText(nextStopEtaSeconds)}` : ''}
             </Text>
           ) : null}
         </View>
@@ -62,10 +72,8 @@ export function VehicleCard({
           <Text style={[styles.close, { color: theme.muted }]}>✕</Text>
         </Pressable>
       </View>
-      {vehicle.delaySeconds !== null ? (
-        <Text style={[styles.delay, { color: vehicle.delaySeconds > 120 ? theme.amber : theme.text }]}>
-          {delayText(vehicle.delaySeconds)}
-        </Text>
+      {delaySeconds !== null ? (
+        <Text style={[styles.delay, { color: delaySeconds > 120 ? theme.amber : theme.text }]}>{delayText(delaySeconds)}</Text>
       ) : null}
       <Text style={[styles.sub, { color: theme.muted }]}>{details.join(' · ')}</Text>
     </View>

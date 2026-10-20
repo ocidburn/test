@@ -4,6 +4,8 @@ import { FlatList, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View
 
 import { getDepartures, getStopPosts, type Departure, type StopPost } from '../../core/gtfs/queries';
 import { formatClock } from '../../core/time/warsaw';
+import { buildActiveOn, liveDelaysForStop, type StopLive } from '../../platform/describe';
+import { useLive } from '../../state/live';
 import { useTimetable } from '../../state/timetable';
 import { LineBadge } from '../../ui/line-badge';
 import { useTheme } from '../../ui/theme';
@@ -18,13 +20,21 @@ const countdown = (at: number, now: number) => {
   return formatClock(at);
 };
 
+const delayLabel = (seconds: number) => {
+  const minutes = Math.round(seconds / 60);
+  if (minutes === 0) return 'вовремя';
+  return minutes > 0 ? `+${minutes} мин` : `${minutes} мин`;
+};
+
 export default function StopScreen() {
   const theme = useTheme();
   const { name } = useLocalSearchParams<{ name: string }>();
   const db = useTimetable((state) => state.db);
+  const vehicles = useLive((state) => state.vehicles);
   const [posts, setPosts] = useState<StopPost[]>([]);
   const [selectedPost, setSelectedPost] = useState<number | null>(null);
   const [departures, setDepartures] = useState<Departure[]>([]);
+  const [live, setLive] = useState<Map<string, StopLive>>(new Map());
   const [loaded, setLoaded] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const now = useNow(15_000);
@@ -62,6 +72,25 @@ export default function StopScreen() {
     };
   }, [fetchDepartures]);
 
+  // Live overlay: the real countdown and delay for any departure whose vehicle
+  // is on the map right now, matched to its scheduled trip by the GTFS geometry.
+  const lineSet = useMemo(() => new Set(departures.map((d) => d.line)), [departures]);
+  const stopSet = useMemo(() => new Set(stopIdxs), [stopIdxs]);
+  useEffect(() => {
+    // Nothing to match: leave the last overlay, which the next poll refreshes
+    // (stale entries only match by exact trip id, so they fall off on their own).
+    if (!db || !stopSet.size || !lineSet.size || !vehicles.length) return;
+    let cancelled = false;
+    (async () => {
+      const activeOn = await buildActiveOn(db, Date.now());
+      const map = await liveDelaysForStop(db, stopSet, lineSet, vehicles, Date.now(), activeOn);
+      if (!cancelled) setLive(map);
+    })().catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [db, stopSet, lineSet, vehicles]);
+
   const onRefresh = async () => {
     setRefreshing(true);
     try {
@@ -71,7 +100,15 @@ export default function StopScreen() {
     }
   };
 
-  const visible = departures.filter((departure) => departure.at >= now - 60_000);
+  const rows = departures
+    .map((departure) => {
+      const match = live.get(String(departure.tripIdx));
+      const at = match ? now + match.etaSeconds * 1000 : departure.at;
+      return { departure, at, delaySeconds: match?.delaySeconds ?? null, isLive: !!match };
+    })
+    .filter((row) => row.at >= now - 60_000)
+    .sort((a, b) => a.at - b.at);
+  const liveCount = rows.filter((row) => row.isLive).length;
 
   return (
     <View style={styles.screen}>
@@ -95,39 +132,54 @@ export default function StopScreen() {
         </ScrollView>
       ) : null}
       <FlatList
-        data={visible}
-        keyExtractor={(item) => `${item.tripIdx}-${item.serviceDay}-${item.stopIdx}`}
+        data={rows}
+        keyExtractor={(item) => `${item.departure.tripIdx}-${item.departure.serviceDay}-${item.departure.stopIdx}`}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
         contentContainerStyle={styles.list}
         ItemSeparatorComponent={() => <View style={[styles.separator, { backgroundColor: theme.border }]} />}
         ListEmptyComponent={
-          loaded ? (
-            <Text style={[styles.empty, { color: theme.muted }]}>Ближайшие 3 часа отправлений нет</Text>
-          ) : undefined
+          loaded ? <Text style={[styles.empty, { color: theme.muted }]}>Ближайшие 3 часа отправлений нет</Text> : undefined
         }
         renderItem={({ item }) => {
+          const { departure } = item;
           const soon = item.at - now < 15 * 60_000;
+          const late = item.delaySeconds !== null && item.delaySeconds >= 120;
           return (
             <View style={[styles.row, { backgroundColor: theme.surface }]}>
-              <LineBadge line={item.line} tram={item.tram} />
+              <LineBadge line={departure.line} tram={departure.tram} />
               <View style={styles.middle}>
                 <Text style={[styles.headsign, { color: theme.text }]} numberOfLines={1}>
-                  {item.headsign ?? '—'}
+                  {departure.headsign ?? '—'}
                 </Text>
-                {posts.length > 1 && selectedPost === null ? (
-                  <Text style={[styles.post, { color: theme.muted }]}>
-                    słupek {item.stopCode ?? ''} · {formatClock(item.at)}
-                  </Text>
-                ) : (
-                  <Text style={[styles.post, { color: theme.muted }]}>{formatClock(item.at)}</Text>
-                )}
+                <Text style={[styles.post, { color: theme.muted }]} numberOfLines={1}>
+                  {[
+                    posts.length > 1 && selectedPost === null ? `słupek ${departure.stopCode ?? ''}` : null,
+                    item.isLive && item.at !== departure.at
+                      ? `${formatClock(item.at)} (по расписанию ${formatClock(departure.at)})`
+                      : formatClock(departure.at),
+                  ]
+                    .filter(Boolean)
+                    .join(' · ')}
+                </Text>
               </View>
-              <Text style={[styles.time, { color: soon ? theme.amber : theme.text }]}>{countdown(item.at, now)}</Text>
+              <View style={styles.right}>
+                <View style={styles.timeRow}>
+                  {item.isLive ? <View style={[styles.dot, { backgroundColor: '#16A34A' }]} /> : null}
+                  <Text style={[styles.time, { color: soon ? theme.amber : theme.text }]}>{countdown(item.at, now)}</Text>
+                </View>
+                {item.delaySeconds !== null ? (
+                  <Text style={[styles.delay, { color: late ? theme.danger : theme.muted }]}>{delayLabel(item.delaySeconds)}</Text>
+                ) : null}
+              </View>
             </View>
           );
         }}
       />
-      <Text style={[styles.footnote, { color: theme.muted }]}>По расписанию · живые данные появятся на этапе 3</Text>
+      <Text style={[styles.footnote, { color: theme.muted }]}>
+        {liveCount
+          ? `Онлайн: ${liveCount} рейсов отслеживаются · задержка по расписанию GTFS`
+          : 'По расписанию GTFS · онлайн появится, когда рейс выйдет на линию'}
+      </Text>
     </View>
   );
 }
@@ -142,7 +194,11 @@ const styles = StyleSheet.create({
   middle: { flex: 1, gap: 2 },
   headsign: { fontSize: 17, fontWeight: '500' },
   post: { fontSize: 13 },
+  right: { alignItems: 'flex-end', gap: 2 },
+  timeRow: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  dot: { width: 7, height: 7, borderRadius: 3.5 },
   time: { fontSize: 18, fontWeight: '700', fontVariant: ['tabular-nums'] },
+  delay: { fontSize: 12, fontWeight: '600' },
   separator: { height: StyleSheet.hairlineWidth, marginLeft: 68 },
   empty: { textAlign: 'center', marginTop: 32, fontSize: 15 },
   footnote: { textAlign: 'center', fontSize: 12, paddingVertical: 8 },

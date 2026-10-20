@@ -8,7 +8,9 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { getStopsInBBox, getVariants, getVariantStops, type MapStop } from '../core/gtfs/map-queries';
 import { inBBox, type BBox } from '../core/geo';
 import { matchVariant, nextStop, stopsAlong, type Variant } from '../core/realtime/route-match';
+import type { RunDescription } from '../core/realtime/trip-match';
 import type { LiveVehicle } from '../core/realtime/types';
+import { buildActiveOn, describeVehicle } from '../platform/describe';
 import { startLive, stopLive, useLive } from '../state/live';
 import { useTimetable } from '../state/timetable';
 import { StatusBanner } from '../ui/status-banner';
@@ -49,6 +51,7 @@ export default function MapScreen() {
   const [region, setRegion] = useState<Region>(WROCLAW);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [route, setRoute] = useState<RouteView | null>(null);
+  const [run, setRun] = useState<{ id: string; run: RunDescription | null } | null>(null);
   const [stops, setStops] = useState<MapStop[]>([]);
   const [located, setLocated] = useState(false);
   const variantsCache = useRef(new Map<string, Variant[]>());
@@ -129,9 +132,33 @@ export default function MapScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [db, selectedLine, selectedLat, selectedLon, selectedHeading]);
 
+  // Which scheduled run the selected MPK vehicle is on: its delay and ETA.
+  // Kłosok already carries a delay from its feed, so it is left alone.
+  const describeKey = selected && selected.delaySeconds === null ? `${selectedId}` : null;
+  useEffect(() => {
+    // A stale run from a previous selection is ignored by `selectedRun`'s id
+    // check, so this just skips rather than clearing state synchronously.
+    if (!db || !describeKey || selectedLine === null || selectedLat === undefined || selectedLon === undefined) return;
+    let cancelled = false;
+    (async () => {
+      const activeOn = await buildActiveOn(db, Date.now());
+      const description = await describeVehicle(
+        db,
+        { line: selectedLine, lat: selectedLat, lon: selectedLon, heading: selectedHeading },
+        Date.now(),
+        activeOn,
+      );
+      if (!cancelled) setRun({ id: describeKey, run: description?.run ?? null });
+    })().catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [db, describeKey, selectedLine, selectedLat, selectedLon, selectedHeading]);
+
   // A vehicle that dropped out of the feed takes its route off the map with it,
   // and a route still loading for a newly tapped line is not shown under the wrong vehicle.
   const shownRoute = selected && route?.line === selected.line ? route : null;
+  const selectedRun = selected && run?.id === String(selectedId) ? run.run : null;
   const along = useMemo(() => {
     if (!shownRoute || !selected) return null;
     return matchVariant([shownRoute.variant], selected)?.projection.along ?? null;
@@ -270,8 +297,10 @@ export default function MapScreen() {
         {selected ? (
           <VehicleCard
             vehicle={selected}
-            headsign={selected.headsign ?? shownRoute?.variant.headsign ?? null}
-            nextStop={upcoming?.name ?? null}
+            headsign={selected.headsign ?? selectedRun?.headsign ?? shownRoute?.variant.headsign ?? null}
+            nextStop={selectedRun?.nextStop?.name ?? upcoming?.name ?? null}
+            nextStopEtaSeconds={selectedRun?.nextStop?.etaSeconds ?? null}
+            delaySeconds={selected.delaySeconds ?? selectedRun?.delaySeconds ?? null}
             now={now}
             onClose={() => setSelectedId(null)}
           />

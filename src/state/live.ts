@@ -6,6 +6,7 @@ import { getLines, lineSets, timetableResolver, type LineInfo } from '../core/gt
 import { isTramLine } from '../core/lines';
 import { LiveTracker, type SourceName } from '../core/realtime/tracker';
 import type { LiveVehicle, SourceStatus } from '../core/realtime/types';
+import { clearDescribeCache } from '../platform/describe';
 import { useTimetable } from './timetable';
 
 const POLL_MS = 10_000;
@@ -61,6 +62,8 @@ let tracker: { db: Db; instance: LiveTracker; lines: Promise<LineInfo[]> } | nul
 
 const trackerFor = (db: Db) => {
   if (tracker?.db !== db) {
+    // New timetable: its shapes and schedules are different.
+    clearDescribeCache();
     const lines = getLines(db).then((list) => {
       useLive.setState({ lines: list });
       return list;
