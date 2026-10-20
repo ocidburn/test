@@ -11,6 +11,9 @@ Ported files (each says so in its header):
   src/core/gtfs/catalogue.ts   <- server/src/gtfs/catalogue.js
   src/core/gtfs/archive.ts     <- server/src/gtfs/archive.js
   src/core/lines.ts            <- server/src/lines.js
+  src/core/realtime/mpk.ts     <- server/src/vehicles.js (request encodings, normalisation)
+  src/core/realtime/open-data.ts <- server/src/open-data.js (normalisation, merge rules)
+  src/core/realtime/klosok.ts  <- server/src/klosok/realtime.js (labels, delays)
 
 The original license follows.
 

@@ -2,15 +2,22 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { formatDateKey } from '../core/time/warsaw';
 import { lastCheckedAt } from '../platform/timetable';
+import { useLive } from '../state/live';
 import { useTimetable } from '../state/timetable';
 import { StatusBanner } from '../ui/status-banner';
 import { useTheme } from '../ui/theme';
 
-const formatInstant = (ms: number | null) => {
+const formatInstant = (ms: number | null | undefined) => {
   if (!ms) return '—';
   const date = new Date(ms);
   return `${date.toLocaleDateString()} ${date.toLocaleTimeString().slice(0, 5)}`;
 };
+
+const LIVE_SOURCES = [
+  ['mpk', 'MPK bus_position'],
+  ['openData', 'Open Data (таблица 14)'],
+  ['klosok', 'Kłosok GTFS-RT'],
+] as const;
 
 const REASONS: Record<string, string> = {
   'installed timetable is the best available': 'Установлено актуальное расписание',
@@ -25,6 +32,7 @@ export default function SettingsScreen() {
   const lastResult = useTimetable((state) => state.lastResult);
   const log = useTimetable((state) => state.log);
   const update = useTimetable((state) => state.update);
+  const live = useLive((state) => state.status);
 
   const rows: [string, string][] = [
     ['Снимок', meta?.sourceName ?? '—'],
@@ -50,6 +58,29 @@ export default function SettingsScreen() {
           </View>
         ))}
       </View>
+      <Text style={[styles.section, { color: theme.muted }]}>ЖИВЫЕ ДАННЫЕ</Text>
+      <View style={[styles.card, { backgroundColor: theme.surface }]}>
+        {LIVE_SOURCES.map(([key, label]) => {
+          const source = live?.[key];
+          const value = !source?.at
+            ? 'ещё не опрашивался'
+            : source.ok
+              ? `${source.count} · ${formatInstant(source.okAt)}`
+              : `ошибка: ${source.error ?? '?'}`;
+          return (
+            <View key={key} style={[styles.row, { borderColor: theme.border }]}>
+              <Text style={{ color: theme.muted, fontSize: 15 }}>{label}</Text>
+              <Text
+                style={{ color: source && !source.ok && source.at ? theme.danger : theme.text, fontSize: 14, flexShrink: 1, textAlign: 'right' }}
+                selectable
+                numberOfLines={3}
+              >
+                {value}
+              </Text>
+            </View>
+          );
+        })}
+      </View>
       <Pressable
         disabled={!!activity}
         onPress={() => void update({ force: true })}
@@ -68,7 +99,7 @@ export default function SettingsScreen() {
         </View>
       ) : null}
       <Text style={[styles.note, { color: theme.muted }]}>
-        Данные: Otwarte Dane Wrocław (GTFS). Приложение работает без своего сервера: расписание хранится на телефоне.
+        Данные: Otwarte Dane Wrocław (GTFS и таблица положений), MPK Wrocław, PT Kłosok. Своего сервера нет: расписание хранится на телефоне, положения машин телефон запрашивает сам раз в 10 секунд, пока карта открыта.
       </Text>
     </ScrollView>
   );
@@ -76,6 +107,7 @@ export default function SettingsScreen() {
 
 const styles = StyleSheet.create({
   content: { paddingBottom: 40, gap: 12 },
+  section: { marginHorizontal: 20, marginTop: 8, fontSize: 12, fontWeight: '600' },
   card: { marginHorizontal: 16, borderRadius: 12, overflow: 'hidden' },
   row: {
     flexDirection: 'row',

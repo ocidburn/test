@@ -32,9 +32,11 @@ export default function RootLayout() {
           contentStyle: { backgroundColor: theme.background },
         }}
       >
-        <Stack.Screen name="index" options={{ title: 'Остановки' }} />
+        <Stack.Screen name="index" options={{ title: 'Карта', headerShown: false }} />
+        <Stack.Screen name="search" options={{ title: 'Остановки' }} />
         <Stack.Screen name="stop/[name]" options={{ title: '' }} />
-        <Stack.Screen name="settings" options={{ title: 'Расписание', presentation: 'modal' }} />
+        <Stack.Screen name="lines" options={{ title: 'Линии на карте', presentation: 'modal' }} />
+        <Stack.Screen name="settings" options={{ title: 'Данные', presentation: 'modal' }} />
       </Stack>
     </>
   );

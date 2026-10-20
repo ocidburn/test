@@ -7,17 +7,9 @@ import { formatClock } from '../../core/time/warsaw';
 import { useTimetable } from '../../state/timetable';
 import { LineBadge } from '../../ui/line-badge';
 import { useTheme } from '../../ui/theme';
+import { useNow } from '../../ui/use-now';
 
 const REFRESH_MS = 30_000;
-
-const useNow = (intervalMs: number) => {
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    const timer = setInterval(() => setNow(Date.now()), intervalMs);
-    return () => clearInterval(timer);
-  }, [intervalMs]);
-  return now;
-};
 
 const countdown = (at: number, now: number) => {
   const minutes = Math.floor((at - now) / 60_000);

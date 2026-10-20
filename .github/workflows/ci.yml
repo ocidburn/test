@@ -8,10 +8,9 @@ on:
   workflow_dispatch:
     inputs:
       build:
-        description: 'Build installable apps'
-        type: choice
-        options: [none, android, ios, both]
-        default: both
+        description: 'Build the iOS app'
+        type: boolean
+        default: true
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -33,35 +32,10 @@ jobs:
       - run: npm test -- --ci
 
   # Builds only on a tag or a manual run: macOS minutes are the scarce ones.
-  android:
-    name: Android APK
-    needs: check
-    if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && (inputs.build == 'android' || inputs.build == 'both'))
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-          cache: npm
-      - uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: '17'
-      - run: npm ci
-      - run: npx expo prebuild --platform android --no-install
-      # Release build signed with the debug key: installable by side-loading, not for a store.
-      - run: ./gradlew assembleRelease --no-daemon
-        working-directory: android
-      - uses: actions/upload-artifact@v4
-        with:
-          name: wroclaw-transit-android
-          path: android/app/build/outputs/apk/release/app-release.apk
-
   ios:
     name: iOS unsigned IPA
     needs: check
-    if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && (inputs.build == 'ios' || inputs.build == 'both'))
+    if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.build)
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4

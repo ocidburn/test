@@ -1,6 +1,6 @@
 # AGENTS.md
 
-Personal Wrocław transit app: Expo SDK 58 (React Native 0.88), TypeScript, no backend.
+Personal Wrocław transit app for iPhone: Expo SDK 58 (React Native 0.88), TypeScript, no backend. iOS only.
 Read README.md for the layout.
 
 ## Commands
@@ -31,6 +31,10 @@ Run lint, typecheck and tests before committing.
 - HTTP: use `src/core/net/http.ts`; its timeout covers reading the body.
 - Do not add entitlements that a free Apple ID cannot sign (push, App Groups, iCloud).
   The arrival alert, when it comes, is a local notification.
+- Live sources fail independently; a failure is reported in its `SourceStatus`, never by emptying the map.
+  `bus_position` answers `200 []` to a body it does not understand — that is an error, not "no vehicles".
+- The GTFS-RT decoder is hand-written (`src/core/realtime/gtfs-rt.ts`); protobufjs is a dev dependency for tests only.
+- A vehicle's direction comes from `matchVariant` (distance + heading), never from distance alone.
 - `ios/` and `android/` are generated (`expo prebuild`); configure through `app.json` and plugins.
 - Code ported from wroclaw-mpk-map must come from MIT commit `b11fe19` only, with a header
   note and an entry in NOTICE.

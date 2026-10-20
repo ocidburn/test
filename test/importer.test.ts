@@ -36,7 +36,7 @@ describe('import', () => {
   test('shape points are stored in sequence order', async () => {
     const { db } = await importFixture();
     const row = await db.first<{ points: Uint8Array }>("SELECT points FROM shapes WHERE shape_id = 's4a'");
-    const floats = new Float32Array(row!.points.slice().buffer);
+    const floats = new Float32Array(new Uint8Array(row!.points).buffer);
     expect(Array.from(floats).map((value) => Number(value.toFixed(3)))).toEqual([51.11, 17.032, 51.105, 17.033, 51.08, 16.98]);
   });
 
