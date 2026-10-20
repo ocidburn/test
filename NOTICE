@@ -1,0 +1,41 @@
+Wrocław Transit — third-party notices
+=====================================
+
+Parts of src/core are ported to TypeScript from wroclaw-mpk-map
+(https://github.com/real-kijmoshi/wroclaw-mpk-map), taken from commit
+b11fe19c813029451d69c1abf79de919d676bbcf (2026-09-05), the last revision
+published under the MIT License. Later revisions of that project are
+proprietary; nothing here is taken from them.
+
+Ported files (each says so in its header):
+  src/core/gtfs/catalogue.ts   <- server/src/gtfs/catalogue.js
+  src/core/gtfs/archive.ts     <- server/src/gtfs/archive.js
+  src/core/lines.ts            <- server/src/lines.js
+
+The original license follows.
+
+-------------------------------------------------------------------------------
+MIT License
+
+Copyright (c) 2025 kijmoshi
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+-------------------------------------------------------------------------------
+
+Timetable data: Otwarte Dane Wrocław (GTFS), published by the City of Wrocław.
