@@ -12,9 +12,11 @@ on:
         type: boolean
         default: true
 
+# A push supersedes the previous push's checks, but never cancels a build
+# started by hand or by a tag: those are what gets installed.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: ${{ github.event_name == 'push' && !startsWith(github.ref, 'refs/tags/') }}
 
 jobs:
   check:
