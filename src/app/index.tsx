@@ -31,6 +31,7 @@ const regionBox = (region: Region, margin = 0.15): BBox => ({
 });
 
 type RouteView = {
+  line: string;
   variant: Variant;
   stops: (Awaited<ReturnType<typeof getVariantStops>>[number] & { along: number })[];
 };
@@ -117,9 +118,9 @@ export default function MapScreen() {
         setRoute(null);
         return;
       }
-      if (route?.variant.shapeIdx === match.variant.shapeIdx) return;
+      if (route?.line === selectedLine && route.variant.shapeIdx === match.variant.shapeIdx) return;
       const routeStops = await getVariantStops(db, match.variant.shapeIdx);
-      if (!cancelled) setRoute({ variant: match.variant, stops: stopsAlong(match.variant.points, routeStops) });
+      if (!cancelled) setRoute({ line: selectedLine, variant: match.variant, stops: stopsAlong(match.variant.points, routeStops) });
     })().catch(() => {});
     return () => {
       cancelled = true;
@@ -128,18 +129,15 @@ export default function MapScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [db, selectedLine, selectedLat, selectedLon, selectedHeading]);
 
+  // A vehicle that dropped out of the feed takes its route off the map with it,
+  // and a route still loading for a newly tapped line is not shown under the wrong vehicle.
+  const shownRoute = selected && route?.line === selected.line ? route : null;
   const along = useMemo(() => {
-    if (!route || !selected) return null;
-    return matchVariant([route.variant], selected)?.projection.along ?? null;
-  }, [route, selected]);
-  const upcoming = route && along !== null ? nextStop(route.stops, along) : null;
-  // A vehicle that dropped out of the feed takes its route off the map with it.
-  const shownRoute = selected ? route : null;
+    if (!shownRoute || !selected) return null;
+    return matchVariant([shownRoute.variant], selected)?.projection.along ?? null;
+  }, [shownRoute, selected]);
+  const upcoming = shownRoute && along !== null ? nextStop(shownRoute.stops, along) : null;
 
-  const select = (vehicle: LiveVehicle | null) => {
-    setSelectedId(vehicle?.id ?? null);
-    if (!vehicle || vehicle.line !== selected?.line) setRoute(null);
-  };
 
   const locate = async () => {
     const permission = await Location.requestForegroundPermissionsAsync();
@@ -165,7 +163,7 @@ export default function MapScreen() {
         onPress={(event) => {
           // On iOS a marker tap also reaches the map; only a tap on the map itself deselects.
           if (event.nativeEvent.action === 'marker-press') return;
-          select(null);
+          setSelectedId(null);
         }}
         showsUserLocation={located}
         showsPointsOfInterests={false}
@@ -213,18 +211,17 @@ export default function MapScreen() {
             ))
           : null}
         {shown.map((vehicle) => (
-          <Marker
+          <VehicleMarker
             key={vehicle.id}
-            coordinate={{ latitude: vehicle.lat, longitude: vehicle.lon }}
-            anchor={{ x: 0.5, y: 0.5 }}
-            zIndex={vehicle.id === selectedId ? 1000 : 10}
-            onPress={(event) => {
-              event.stopPropagation();
-              select(vehicle);
-            }}
-          >
-            <VehicleMarker line={vehicle.line} tram={vehicle.tram} heading={vehicle.heading} selected={vehicle.id === selectedId} />
-          </Marker>
+            id={vehicle.id}
+            line={vehicle.line}
+            tram={vehicle.tram}
+            lat={vehicle.lat}
+            lon={vehicle.lon}
+            heading={vehicle.heading}
+            selected={vehicle.id === selectedId}
+            onSelect={setSelectedId}
+          />
         ))}
       </MapView>
 
@@ -273,10 +270,10 @@ export default function MapScreen() {
         {selected ? (
           <VehicleCard
             vehicle={selected}
-            headsign={selected.headsign ?? route?.variant.headsign ?? null}
+            headsign={selected.headsign ?? shownRoute?.variant.headsign ?? null}
             nextStop={upcoming?.name ?? null}
             now={now}
-            onClose={() => select(null)}
+            onClose={() => setSelectedId(null)}
           />
         ) : null}
       </View>
