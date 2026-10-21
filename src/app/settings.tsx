@@ -24,6 +24,7 @@ const snapshotFromUrl = (url: string | null) => {
 };
 
 const LIVE_SOURCES = [
+  ['impk', 'iMPK'],
   ['mpk', 'MPK bus_position'],
   ['openData', 'Open Data (таблица 14)'],
   ['klosok', 'Kłosok GTFS-RT'],
@@ -36,6 +37,7 @@ const REJECTED: Record<string, string> = {
   time: 'время не читается',
   stale: 'устарели',
   future: 'время в будущем',
+  shape: 'не объект',
 };
 
 const formatAge = (seconds: number) =>
@@ -60,6 +62,9 @@ const humanError = (message: string) =>
     .replace(/not JSON \(HTTP (\d+)\)/g, 'ответ не JSON (HTTP $1)')
     .replace(/timed out after (\d+) ms: \S+/g, 'нет ответа за $1 мс')
     .replace(/\bempty list\b/g, 'пустой список')
+    .replace(/^empty body$/, 'пустой ответ сервера')
+    .replace(/login or password rejected \(HTTP 401\)/g, 'логин или пароль не приняты (HTTP 401)')
+    .replace(/unexpected answer: not a list/g, 'неожиданный ответ: не список')
     .replace(/Network request failed/g, 'нет сети');
 
 const retryIn = (retryAt: number | null, now: number) => {
@@ -114,24 +119,29 @@ export default function SettingsScreen() {
       <View style={[styles.card, { backgroundColor: theme.surface }]}>
         {LIVE_SOURCES.map(([key, label]) => {
           const source = live?.[key];
-          const value = !source?.at
-            ? 'ещё не опрашивался'
-            : source.ok
-              ? `${source.count} · ${formatInstant(source.okAt)}`
-              : `ошибка: ${humanError(source.error ?? '?')}${retryIn(source.retryAt, now)}`;
+          const value =
+            source?.idle === 'off'
+              ? 'выключен'
+              : source?.idle === 'covered'
+                ? 'не нужен, пока отвечает iMPK'
+                : !source?.at
+                  ? 'ещё не опрашивался'
+                  : source.ok
+                    ? `${source.count} · ${formatInstant(source.okAt)}`
+                    : `ошибка: ${humanError(source.error ?? '?')}${retryIn(source.retryAt, now)}`;
           return (
             <View key={key} style={[styles.liveRow, { borderColor: theme.border }]}>
               <View style={styles.liveLine}>
                 <Text style={{ color: theme.muted, fontSize: 15 }}>{label}</Text>
                 <Text
-                  style={{ color: source && !source.ok && source.at ? theme.danger : theme.text, fontSize: 14, flexShrink: 1, textAlign: 'right' }}
+                  style={{ color: source && !source.ok && source.at && !source.idle ? theme.danger : theme.text, fontSize: 14, flexShrink: 1, textAlign: 'right' }}
                   selectable
                   numberOfLines={3}
                 >
                   {value}
                 </Text>
               </View>
-              {source?.ok && source.detail ? (
+              {source?.ok && !source.idle && source.detail ? (
                 <Text style={{ color: theme.muted, fontSize: 12 }} selectable>
                   {formatDetail(source.detail)}
                 </Text>

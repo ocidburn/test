@@ -1,5 +1,7 @@
 import type { DigestSession } from '../net/digest';
 import type { FetchLike } from '../net/http';
+import { parseWarsawWallClock } from './open-data';
+import { inArea, type LiveVehicle, type SourceDetail } from './types';
 
 /**
  * iMPK, MPK Wrocław's own API, used with MPK's permission and the user's own
@@ -60,4 +62,101 @@ export const probeImpk = async (
     // Shown as is.
   }
   return { contentType, bytes: body.length, shape, body };
+};
+
+/**
+ * `getPositions` answers a JSON list: the server's wall-clock time first
+ * ("2026-10-21 13:40:50", Wrocław time), then one object per vehicle:
+ *
+ *   { v: 4102, c: 29086669, x: 17.091331, y: 51.11346, l: "715", t: "b",
+ *     s: "24313", d: "24708", e: 289000 }
+ *
+ * Read from a real answer: v side number, c course (run) id, x/y lon/lat,
+ * l line, t "t" tram / "b" bus, s and d post symbols (d repeats per line:
+ * the terminus), e delay in milliseconds — taken as positive = late.
+ */
+export type ImpkPositions = {
+  vehicles: LiveVehicle[];
+  /** Post symbol of each vehicle's destination, by vehicle id, for the headsign. */
+  destinations: Map<string, string>;
+  detail: SourceDetail;
+};
+
+type Raw = Record<string, unknown>;
+
+const str = (value: unknown) => (typeof value === 'string' ? value.trim() : typeof value === 'number' ? String(value) : '');
+
+export const parseImpkPositions = (
+  body: string,
+  { now, isTram }: { now: number; isTram: (line: string, hint: string | null) => boolean },
+): ImpkPositions => {
+  let data: unknown;
+  try {
+    data = JSON.parse(body);
+  } catch {
+    throw new Error(body.trim() ? `not JSON: ${body.slice(0, 60).replace(/\s+/g, ' ')}` : 'empty body');
+  }
+  if (!Array.isArray(data)) throw new Error('unexpected answer: not a list');
+  const stamped = typeof data[0] === 'string';
+  if (!stamped && data.length === 0) throw new Error('empty list');
+  const serverAt = stamped ? parseWarsawWallClock(data[0]) : null;
+  // Never in the future: a server clock ahead of the phone's is not a newer fix.
+  const positionAt = serverAt === null ? now : Math.min(serverAt, now);
+
+  const rejected: Record<string, number> = {};
+  const reject = (reason: string) => (rejected[reason] = (rejected[reason] ?? 0) + 1);
+  const vehicles: LiveVehicle[] = [];
+  const destinations = new Map<string, string>();
+  const records = stamped ? data.slice(1) : data;
+  for (const item of records) {
+    if (!item || typeof item !== 'object') {
+      reject('shape');
+      continue;
+    }
+    const raw = item as Raw;
+    const line = str(raw.l).toUpperCase();
+    if (!line) {
+      reject('line');
+      continue;
+    }
+    const number = str(raw.v);
+    if (!number) {
+      reject('number');
+      continue;
+    }
+    const lat = Number(raw.y);
+    const lon = Number(raw.x);
+    if (!inArea(lat, lon)) {
+      reject('position');
+      continue;
+    }
+    const delay = typeof raw.e === 'number' && Number.isFinite(raw.e) ? Math.round(raw.e / 1000) : null;
+    const id = `impk:${number}`;
+    const destination = str(raw.d);
+    if (destination) destinations.set(id, destination);
+    vehicles.push({
+      id,
+      line,
+      tram: isTram(line, raw.t === 't' ? 'tram' : raw.t === 'b' ? 'bus' : null),
+      lat,
+      lon,
+      heading: null,
+      source: 'impk',
+      vehicleNumber: number,
+      brigade: null,
+      headsign: null,
+      tripId: null,
+      delaySeconds: delay,
+      positionAt,
+    });
+  }
+  return {
+    vehicles,
+    destinations,
+    detail: {
+      total: records.length,
+      rejected,
+      medianAgeSeconds: serverAt === null ? null : Math.round((now - serverAt) / 1000),
+    },
+  };
 };

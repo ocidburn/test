@@ -1,5 +1,6 @@
 import { bearingDegrees, distanceMeters } from '../geo';
-import type { FetchLike } from '../net/http';
+import type { FetchLike, RequestOptions } from '../net/http';
+import { impkUrl, parseImpkPositions } from './impk';
 import { fetchKlosok, type TripResolver } from './klosok';
 import { fetchMpk, type Encoding, type LineSets } from './mpk';
 import { fetchOpenData, mergeWithOpenData } from './open-data';
@@ -9,7 +10,7 @@ import { emptyStatus, type LiveVehicle, type SourceDetail, type SourceStatus } f
 const KLOSOK_DEDUPE_METERS = 300;
 /** Movement below this is GPS noise, not a heading. */
 const HEADING_MIN_METERS = 8;
-export type SourceName = 'mpk' | 'openData' | 'klosok';
+export type SourceName = 'impk' | 'mpk' | 'openData' | 'klosok';
 
 /**
  * How often each source is asked, and how long its last answer is trusted.
@@ -17,10 +18,18 @@ export type SourceName = 'mpk' | 'openData' | 'klosok';
  * minute is plenty; MPK states no position time, so its answer ages fast.
  */
 const SCHEDULE: Record<SourceName, { everyMs: number; staleMs: number }> = {
+  impk: { everyMs: 0, staleMs: 60_000 },
   mpk: { everyMs: 0, staleMs: 60_000 },
   openData: { everyMs: 60_000, staleMs: 150_000 },
   klosok: { everyMs: 0, staleMs: 90_000 },
 };
+
+/**
+ * While iMPK has answered this recently, MPK and Open Data are not asked:
+ * iMPK has every MPK vehicle with its side number and delay. Shorter than
+ * iMPK's own staleness, so they are back before its last answer expires.
+ */
+const IMPK_COVERS_MS = 30_000;
 
 /** A failing source waits 30 s, then 60, 120 … up to 5 min before it is asked again. */
 const BACKOFF_BASE_MS = 30_000;
@@ -32,12 +41,22 @@ export type LiveSnapshot = {
   status: Record<SourceName, SourceStatus>;
 };
 
+/** The user's iMPK login, when iMPK is switched on and filled in. */
+export type ImpkClient = {
+  url: string;
+  session: { fetchText: (url: string, options?: RequestOptions) => Promise<string> };
+};
+
 export type TrackerDeps = {
   lines: () => Promise<LineSets>;
   isTram: (line: string, hint?: string | null) => boolean;
   resolver: TripResolver;
   fetchImpl?: FetchLike;
   now?: () => number;
+  /** Null while iMPK is off. */
+  impk?: () => Promise<ImpkClient | null>;
+  /** Stop names by post symbol (GTFS stop_code), for iMPK's destinations. */
+  stopNames?: () => Promise<Map<string, string>>;
 };
 
 /**
@@ -48,14 +67,21 @@ export type TrackerDeps = {
  */
 export class LiveTracker {
   readonly status: Record<SourceName, SourceStatus> = {
+    impk: emptyStatus(),
     mpk: emptyStatus(),
     openData: emptyStatus(),
     klosok: emptyStatus(),
   };
-  private last: Record<SourceName, { vehicles: LiveVehicle[]; at: number } | null> = { mpk: null, openData: null, klosok: null };
+  private last: Record<SourceName, { vehicles: LiveVehicle[]; at: number } | null> = {
+    impk: null,
+    mpk: null,
+    openData: null,
+    klosok: null,
+  };
   private encoding: Encoding | null = null;
   /** Per source: consecutive failures, and the earliest time to ask again. */
   private readonly pace: Record<SourceName, { failures: number; nextAt: number }> = {
+    impk: { failures: 0, nextAt: 0 },
     mpk: { failures: 0, nextAt: 0 },
     openData: { failures: 0, nextAt: 0 },
     klosok: { failures: 0, nextAt: 0 },
@@ -70,6 +96,7 @@ export class LiveTracker {
   private async run(name: SourceName, task: () => Promise<{ vehicles: LiveVehicle[]; detail?: SourceDetail }>) {
     const at = this.now();
     const pace = this.pace[name];
+    this.status[name].idle = null;
     // Not due yet (its interval, or a pause after failures): keep the last answer.
     if (at < pace.nextAt) return;
     const status = this.status[name];
@@ -87,6 +114,21 @@ export class LiveTracker {
     }
   }
 
+  /** Not asked this round; a source switched off also takes its vehicles off the map. */
+  private idle(name: SourceName, reason: 'off' | 'covered') {
+    this.status[name].idle = reason;
+    if (reason === 'off') {
+      this.last[name] = null;
+      Object.assign(this.status[name], { ok: false, count: 0, error: null, retryAt: null });
+      this.pace[name] = { failures: 0, nextAt: 0 };
+    }
+  }
+
+  private impkAnswered(now: number, withinMs: number) {
+    const last = this.last.impk;
+    return last !== null && now - last.at <= withinMs;
+  }
+
   private fresh(name: SourceName, maxAgeMs: number, now: number) {
     const last = this.last[name];
     if (!last || now - last.at > maxAgeMs) return [];
@@ -95,17 +137,38 @@ export class LiveTracker {
 
   async poll(): Promise<LiveSnapshot> {
     const { fetchImpl, isTram, resolver } = this.deps;
+    const impk = this.deps.impk ? await this.deps.impk().catch(() => null) : null;
+    const covered = impk !== null && this.impkAnswered(this.now(), IMPK_COVERS_MS);
+    if (!impk) this.idle('impk', 'off');
+    if (covered) {
+      this.idle('mpk', 'covered');
+      this.idle('openData', 'covered');
+    }
     await Promise.all([
-      this.run('mpk', async () => {
-        const lines = await this.deps.lines();
-        const result = await fetchMpk(lines, { preferred: this.encoding, fetchImpl, now: this.now(), isTram: (line, hint) => isTram(line, hint) });
-        this.encoding = result.encoding;
-        return { vehicles: result.vehicles };
-      }),
-      this.run('openData', async () => {
-        const { vehicles, ...detail } = await fetchOpenData({ fetchImpl, now: this.now(), isTram: (line) => isTram(line) });
-        return { vehicles, detail };
-      }),
+      impk &&
+        this.run('impk', async () => {
+          const body = await impk.session.fetchText(impkUrl(impk.url, 'getPositions', { shortcut: 'true' }), { fetchImpl });
+          const parsed = parseImpkPositions(body, { now: this.now(), isTram: (line, hint) => isTram(line, hint) });
+          const names = this.deps.stopNames ? await this.deps.stopNames().catch(() => null) : null;
+          const vehicles = parsed.vehicles.map((vehicle) => {
+            const destination = parsed.destinations.get(vehicle.id);
+            const name = destination ? names?.get(destination) : undefined;
+            return name ? { ...vehicle, headsign: name } : vehicle;
+          });
+          return { vehicles, detail: parsed.detail };
+        }),
+      !covered &&
+        this.run('mpk', async () => {
+          const lines = await this.deps.lines();
+          const result = await fetchMpk(lines, { preferred: this.encoding, fetchImpl, now: this.now(), isTram: (line, hint) => isTram(line, hint) });
+          this.encoding = result.encoding;
+          return { vehicles: result.vehicles };
+        }),
+      !covered &&
+        this.run('openData', async () => {
+          const { vehicles, ...detail } = await fetchOpenData({ fetchImpl, now: this.now(), isTram: (line) => isTram(line) });
+          return { vehicles, detail };
+        }),
       this.run('klosok', async () => ({ vehicles: await fetchKlosok(resolver, { fetchImpl, now: this.now() }) })),
     ]);
     return this.combine();
@@ -114,10 +177,10 @@ export class LiveTracker {
   /** Merge whatever each source last returned, while it is still fresh. */
   combine(): LiveSnapshot {
     const now = this.now();
-    const merged = mergeWithOpenData(
-      this.fresh('mpk', SCHEDULE.mpk.staleMs, now),
-      this.fresh('openData', SCHEDULE.openData.staleMs, now),
-    );
+    // iMPK, while its last answer is fresh, stands for MPK and Open Data together.
+    const merged = this.impkAnswered(now, SCHEDULE.impk.staleMs)
+      ? this.fresh('impk', SCHEDULE.impk.staleMs, now)
+      : mergeWithOpenData(this.fresh('mpk', SCHEDULE.mpk.staleMs, now), this.fresh('openData', SCHEDULE.openData.staleMs, now));
     const klosok = this.fresh('klosok', SCHEDULE.klosok.staleMs, now);
     const vehicles = [
       ...merged.filter(
@@ -154,6 +217,7 @@ export class LiveTracker {
 }
 
 const structuredCloneStatus = (status: Record<SourceName, SourceStatus>): Record<SourceName, SourceStatus> => ({
+  impk: { ...status.impk },
   mpk: { ...status.mpk },
   openData: { ...status.openData },
   klosok: { ...status.klosok },

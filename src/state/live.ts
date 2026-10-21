@@ -2,11 +2,12 @@ import Storage from 'expo-sqlite/kv-store';
 import { create } from 'zustand';
 
 import type { Db } from '../core/db';
-import { getLines, lineSets, timetableResolver, type LineInfo } from '../core/gtfs/map-queries';
+import { getLines, getStopNamesByCode, lineSets, timetableResolver, type LineInfo } from '../core/gtfs/map-queries';
 import { isTramLine } from '../core/lines';
 import { LiveTracker, type SourceName } from '../core/realtime/tracker';
 import type { LiveVehicle, SourceStatus } from '../core/realtime/types';
 import { clearDescribeCache } from '../platform/describe';
+import { impkClient } from './impk';
 import { useTimetable } from './timetable';
 
 const POLL_MS = 10_000;
@@ -90,6 +91,7 @@ const trackerFor = (db: Db) => {
       return list;
     });
     const tramLines = lines.then((list) => new Set(list.filter((line) => line.tram).map((line) => line.name)));
+    let stopNames: Promise<Map<string, string>> | null = null;
     let trams: Set<string> | null = null;
     void tramLines.then((set) => (trams = set));
     tracker = {
@@ -100,6 +102,8 @@ const trackerFor = (db: Db) => {
         // The timetable knows; the feed's own hint and the line number are fallbacks.
         isTram: (line, hint) => trams?.has(line) ?? (hint === 'tram' || isTramLine(line)),
         resolver: timetableResolver(db),
+        impk: impkClient,
+        stopNames: () => (stopNames ??= getStopNamesByCode(db)),
       }),
     };
   }

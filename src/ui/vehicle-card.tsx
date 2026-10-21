@@ -5,6 +5,7 @@ import { LineBadge } from './line-badge';
 import { useTheme } from './theme';
 
 const SOURCES: Record<LiveVehicle['source'], string> = {
+  impk: 'iMPK',
   mpk: 'MPK',
   merged: 'MPK + Open Data',
   'open-data': 'Open Data',

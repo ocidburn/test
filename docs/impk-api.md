@@ -16,6 +16,27 @@ Base: `https://impk.mpk.wroc.pl:8088/mobile?function=<operation>` (probably GET;
 | `getPostPlate` | `post, line, output=html` | asks for HTML |
 | `getVehicleImage` | `model, hash` | |
 
+## `getPositions&shortcut=true` — seen in a real answer (2026-10-21)
+
+`application/json;charset=utf-8`, a list: the server's wall-clock time (Wrocław) first, then one
+object per vehicle (~480 at midday):
+
+```json
+["2026-10-21 13:40:50",
+ {"v":4102,"c":29086669,"x":17.091331,"y":51.11346,"l":"715","t":"b","s":"24313","d":"24708","e":0},
+ {"v":3102,"c":29256014,"x":16.993567,"y":51.121353,"l":"3","t":"t","s":"12202","d":"25013","e":-31000}]
+```
+
+| Field | Meaning |
+|---|---|
+| `v` | side number |
+| `c` | course (run) id |
+| `x`, `y` | longitude, latitude |
+| `l` | line |
+| `t` | `t` tram, `b` bus |
+| `s`, `d` | post symbols; `d` repeats per line, so it is read as the terminus |
+| `e` | delay in ms; taken as positive = late (not yet checked against the official app) |
+
 Other names in the APK without a confirmed URL (`getPosts`, `getPostsLines`, `getLines`,
 `getVehicles`, `getVehiclesInfo`, `getCourse`, …) may be client methods, not operations.
 The APK also carries TrustKit, i.e. the official app pins the server's certificate: a normal,

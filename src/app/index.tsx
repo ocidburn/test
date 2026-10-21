@@ -189,9 +189,9 @@ export default function MapScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [db, selectedLine, selectedLat, selectedLon, selectedHeading]);
 
-  // Which scheduled run the selected MPK vehicle is on: its delay and ETA.
-  // Kłosok already carries a delay from its feed, so it is left alone.
-  const describeKey = selected && selected.delaySeconds === null ? `${selectedId}` : null;
+  // Which scheduled run the selected vehicle is on: the ETA to its next stop
+  // and, for MPK, its delay. A delay from the feed (iMPK, Kłosok) wins in the card.
+  const describeKey = selected ? `${selectedId}` : null;
   useEffect(() => {
     // A stale run from a previous selection is ignored by `selectedRun`'s id
     // check, so this just skips rather than clearing state synchronously.
@@ -242,7 +242,9 @@ export default function MapScreen() {
     );
   };
 
-  const failing = status ? Object.entries(status).filter(([, s]) => s.at !== null && !s.ok).map(([name]) => name) : [];
+  const asked = status ? Object.entries(status).filter(([, s]) => s.at !== null && !s.idle) : [];
+  const failing = asked.filter(([, s]) => !s.ok).map(([name]) => name);
+  const allFailing = failing.length > 0 && failing.length === asked.length;
 
   return (
     <View style={styles.screen}>
@@ -375,7 +377,7 @@ export default function MapScreen() {
         ) : null}
         <StatusBanner />
         <View style={[styles.chip, { backgroundColor: theme.surface }]}>
-          <View style={[styles.dot, { backgroundColor: !at ? theme.muted : failing.length === 3 ? theme.danger : failing.length ? theme.amber : '#16A34A' }]} />
+          <View style={[styles.dot, { backgroundColor: !at ? theme.muted : allFailing ? theme.danger : failing.length ? theme.amber : '#16A34A' }]} />
           <Text style={{ color: theme.text, fontSize: 13 }}>
             {!at
               ? 'Подключаюсь…'
@@ -406,7 +408,7 @@ export default function MapScreen() {
   );
 }
 
-const SOURCE_NAMES: Record<string, string> = { mpk: 'MPK', openData: 'Open Data', klosok: 'Kłosok' };
+const SOURCE_NAMES: Record<string, string> = { impk: 'iMPK', mpk: 'MPK', openData: 'Open Data', klosok: 'Kłosok' };
 
 const styles = StyleSheet.create({
   screen: { flex: 1 },

@@ -83,6 +83,12 @@ export const getStopsInBBox = (db: Db, box: BBox, limit = 400) =>
   );
 
 /** What Kłosok's trip and route ids mean in the installed timetable. */
+/** Stop names by post symbol (stop_code), as live feeds name their stops. */
+export const getStopNamesByCode = async (db: Db): Promise<Map<string, string>> => {
+  const rows = await db.all<{ code: string; name: string }>('SELECT code, name FROM stops WHERE code IS NOT NULL AND code <> \'\'');
+  return new Map(rows.map((row) => [String(row.code), row.name]));
+};
+
 export const timetableResolver = (db: Db): TripResolver => {
   const lineCache = new Map<string, boolean>();
   return {

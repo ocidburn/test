@@ -35,6 +35,20 @@ type ImpkState = Settings & {
   test: (fn: string, params: string) => Promise<void>;
 };
 
+let client: { key: string; session: DigestSession } | null = null;
+
+/** The saved login as a Digest session for the tracker; null while iMPK is off or not filled in. */
+export const impkClient = async (): Promise<{ url: string; session: DigestSession } | null> => {
+  const { enabled, url, username } = useImpk.getState();
+  if (!enabled || !url || !username) return null;
+  const password = await SecureStore.getItemAsync(PASSWORD_KEY, KEYCHAIN);
+  if (!password) return null;
+  // One session per login, so the Digest nonce is reused between polls.
+  const key = `${url}\n${username}\n${password}`;
+  if (client?.key !== key) client = { key, session: new DigestSession({ username, password }) };
+  return { url, session: client.session };
+};
+
 export const useImpk = create<ImpkState>((set, get) => ({
   ...readSettings(),
   hasPassword: false,
