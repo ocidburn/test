@@ -56,6 +56,11 @@ values are not 5-digit post symbols (e.g. `"50000057"` on line 100). Extra param
 in `getPositions`. Not sorted. Every `t` is a whole minute, so it is read as the scheduled time; the
 board adds the delay of the course's vehicle when it is on the map (late only: an early run waits).
 
+## `getPostPlate`
+
+`post=21011&line=18&output=html` answered `200 text/html` with an empty body (2026-10-21). Not
+used: `getPostInfo` already gives the board.
+
 Other names in the APK without a confirmed URL (`getPosts`, `getPostsLines`, `getLines`,
 `getVehicles`, `getVehiclesInfo`, `getCourse`, …) may be client methods, not operations.
 The APK also carries TrustKit, i.e. the official app pins the server's certificate: a normal,

@@ -4,11 +4,10 @@ import { Pressable, StyleSheet, Switch, Text, TextInput, View } from 'react-nati
 import { useImpk } from '../state/impk';
 import { useTheme } from './theme';
 
-/** Operations whose answers are still to be seen; the post symbol is an example to replace. */
+/** Operations the app reads; the post symbol is an example to replace. */
 const PRESETS = [
   { label: 'Позиции машин', fn: 'getPositions', params: 'shortcut=true' },
   { label: 'Табло słupka', fn: 'getPostInfo', params: 'symbol=21011' },
-  { label: 'Табло HTML', fn: 'getPostPlate', params: 'post=21011&line=18&output=html' },
 ];
 
 /** iMPK login on the Data screen: the user's own account, kept on the phone. */
