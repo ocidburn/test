@@ -116,6 +116,21 @@ describe('describeRun', () => {
     expect(run.stopsAhead).toBe(1);
   });
 
+  test('a lagging position is matched at its own time, not now', async () => {
+    const db = await setup();
+    const profile = await oporowProfile(db);
+    // The same fix as above (2 min late at 08:07), delivered 5 minutes later.
+    const positionAt = warsaw('2026-06-15T08:07:00');
+    const now = positionAt + 5 * 60_000;
+    const activeOn = await buildActiveOn(db, now);
+    const along = profile.stops[1].alongMeters;
+    const run = describeRun(profile, along, now, activeOn, { positionAt })!;
+    // The feed's lag is not delay.
+    expect(run.delaySeconds).toBe(120);
+    // 600 s left at the fix, 300 s of which have gone by.
+    expect(run.nextStop?.etaSeconds).toBe(300);
+  });
+
   test('null when the variant has no usable times', () => {
     const profile: VariantProfile = {
       shapeIdx: 1,

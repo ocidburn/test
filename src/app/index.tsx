@@ -162,6 +162,7 @@ export default function MapScreen() {
   const selectedLat = selected?.lat;
   const selectedLon = selected?.lon;
   const selectedHeading = selected?.heading ?? null;
+  const selectedPositionAt = selected?.positionAt ?? null;
   useEffect(() => {
     if (!db || !selectedLine || selectedLat === undefined || selectedLon === undefined) return;
     let cancelled = false;
@@ -194,13 +195,21 @@ export default function MapScreen() {
   useEffect(() => {
     // A stale run from a previous selection is ignored by `selectedRun`'s id
     // check, so this just skips rather than clearing state synchronously.
-    if (!db || !describeKey || selectedLine === null || selectedLat === undefined || selectedLon === undefined) return;
+    if (
+      !db ||
+      !describeKey ||
+      selectedLine === null ||
+      selectedLat === undefined ||
+      selectedLon === undefined ||
+      selectedPositionAt === null
+    )
+      return;
     let cancelled = false;
     (async () => {
       const activeOn = await buildActiveOn(db, Date.now());
       const description = await describeVehicle(
         db,
-        { line: selectedLine, lat: selectedLat, lon: selectedLon, heading: selectedHeading },
+        { line: selectedLine, lat: selectedLat, lon: selectedLon, heading: selectedHeading, positionAt: selectedPositionAt },
         Date.now(),
         activeOn,
       );
@@ -209,7 +218,7 @@ export default function MapScreen() {
     return () => {
       cancelled = true;
     };
-  }, [db, describeKey, selectedLine, selectedLat, selectedLon, selectedHeading]);
+  }, [db, describeKey, selectedLine, selectedLat, selectedLon, selectedHeading, selectedPositionAt]);
 
   // A vehicle that dropped out of the feed takes its route off the map with it,
   // and a route still loading for a newly tapped line is not shown under the wrong vehicle.

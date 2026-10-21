@@ -64,6 +64,8 @@ const humanError = (message: string) =>
 const retryIn = (retryAt: number | null, now: number) => {
   if (!retryAt) return '';
   const seconds = Math.max(0, Math.round((retryAt - now) / 1000));
+  // The pause is over; the source is asked again on the map's next poll.
+  if (seconds === 0) return ' · повтор при следующем опросе';
   return seconds < 90 ? ` · повтор через ${seconds} с` : ` · повтор через ${Math.round(seconds / 60)} мин`;
 };
 

@@ -151,29 +151,34 @@ export type RunDescription = {
  * Describe the run a vehicle at `along` metres is on: its delay and the stops
  * ahead with live ETAs. Null when no run matches (then only direction and
  * next-stop-by-geometry are known, which the caller already has).
+ *
+ * `positionAt` is when the vehicle was at `along`. A lagging feed (Open Data
+ * runs minutes behind) is matched at that moment, not now — otherwise the lag
+ * reads as delay — and its ETAs are shortened by the position's age.
  */
 export const describeRun = (
   profile: VariantProfile,
   along: number,
   now: number,
   activeOn: (serviceIdx: number, dateKey: number) => boolean,
-  { limit = 8 }: { limit?: number } = {},
+  { limit = 8, positionAt = now }: { limit?: number; positionAt?: number } = {},
 ): RunDescription | null => {
   const stops = profile.stops;
   const timed = stops.length > 1 && stops.every((s) => Number.isFinite(s.arrivalOffset) && Number.isFinite(s.departureOffset));
   if (!timed) return null;
 
   const { offset: progressOffset } = offsetAt(stops, along);
-  const run = matchTrip(profile, progressOffset, now, activeOn);
+  const run = matchTrip(profile, progressOffset, positionAt, activeOn);
   if (!run) return null;
 
   const base = serviceDayBaseMs(run.dateKey);
   let nextIndex = stops.findIndex((stop) => stop.alongMeters > along + 15);
   if (nextIndex === -1) nextIndex = stops.length;
+  const ageSeconds = Math.max(0, (now - positionAt) / 1000);
   const upcoming = stops.slice(nextIndex, nextIndex + Math.max(limit, 0)).map((stop) => ({
     stopIdx: stop.stopIdx,
     name: stop.name,
-    etaSeconds: Math.max(0, Math.round(stop.arrivalOffset - progressOffset)),
+    etaSeconds: Math.max(0, Math.round(stop.arrivalOffset - progressOffset - ageSeconds)),
     scheduledAt: base + (run.startSeconds + stop.arrivalOffset) * 1000,
   }));
 

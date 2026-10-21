@@ -42,14 +42,14 @@ export type VehicleDescription = { variant: Variant; along: number; run: RunDesc
 /** Match a vehicle to a variant and, when the timetable allows, to a run. */
 export const describeVehicle = async (
   db: Db,
-  vehicle: Pick<LiveVehicle, 'line' | 'lat' | 'lon' | 'heading'>,
+  vehicle: Pick<LiveVehicle, 'line' | 'lat' | 'lon' | 'heading' | 'positionAt'>,
   now: number,
   activeOn: ActiveOn,
 ): Promise<VehicleDescription | null> => {
   const match = matchVariant(await variantsOf(db, vehicle.line), vehicle);
   if (!match) return null;
   const profile = await profileOf(db, match.variant, vehicle.line);
-  const run = profile ? describeRun(profile, match.projection.along, now, activeOn) : null;
+  const run = profile ? describeRun(profile, match.projection.along, now, activeOn, { positionAt: vehicle.positionAt }) : null;
   return { variant: match.variant, along: match.projection.along, run };
 };
 
