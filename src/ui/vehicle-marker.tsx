@@ -1,6 +1,6 @@
 import { memo, useEffect, useRef, useState, type ComponentType } from 'react';
 import { Animated, Easing, StyleSheet, Text, View } from 'react-native';
-import Svg, { Circle, Defs, LinearGradient, Path, Stop } from 'react-native-svg';
+import Svg, { Circle, Path } from 'react-native-svg';
 import { AnimatedRegion, MarkerAnimated, type LatLng, type MapMarkerProps } from 'react-native-maps';
 
 import { distanceMeters } from '../core/geo';
@@ -10,8 +10,8 @@ import { lineColor } from './theme';
 /** Room for the drop's point (27 from the centre) at any angle, and the delay ring. */
 const BOX = 60;
 const DOT_BOX = 44;
-/** Length of a dot's trail behind it. */
-const TRAIL = 18;
+/** Each of a dot's three trail segments; the trail is 18 long. */
+const TRAIL_STEP = 6;
 const SELECTED_RIM = '#FFD60A';
 /** How long a marker takes to glide to its new position. Polls are 10 s apart. */
 export const MOVE_MS = 3000;
@@ -42,7 +42,8 @@ export type MarkerStyle = 'drop' | 'dot';
  * every kind — the colour tells tram, bus, express and night apart. While the
  * heading is unknown the drop has no point: a plain circle.
  *
- * `dot`: for a zoomed-out map, a small dot with a trail fading out behind it.
+ * `dot`: for a zoomed-out map, a small dot with a trail fading out behind it,
+ * in plain views so the whole fleet can be drawn.
  *
  * With the delay layer on, a ring (drop) or the rim (dot) shows how late the
  * run is, grey when that is not known. The marker glides to each new
@@ -138,7 +139,7 @@ export const VehicleMarker = memo(function VehicleMarker({
       }}
     >
       {look === 'dot' ? (
-        <Dot id={id} color={color} delay={delay} selected={selected} rotate={heading !== null ? rotate : null} />
+        <Dot color={color} delay={delay} selected={selected} rotate={heading !== null ? rotate : null} />
       ) : (
         <Drop line={line} color={color} delay={delay} selected={selected} rotate={heading !== null ? rotate : null} />
       )}
@@ -197,53 +198,44 @@ const Drop = ({
   );
 };
 
+/** A trail fading out behind a dot, in plain views: hundreds of dots are drawn at once. */
+const TRAIL_STEPS = [0.75, 0.45, 0.2];
+
 const Dot = ({
-  id,
   color,
   delay,
   selected,
   rotate,
 }: {
-  id: string;
   color: string;
   delay: DelayStatus | null;
   selected: boolean;
   rotate: Rotation;
-}) => {
-  const gradient = `trail-${id.replace(/[^A-Za-z0-9_-]/g, '_')}`;
-  const half = DOT_BOX / 2;
-  return (
-    <View style={styles.dotBox} pointerEvents="none">
-      {rotate ? (
-        // A trail fading out behind the dot: drawn pointing south, turned to the heading.
-        <Animated.View style={[StyleSheet.absoluteFill, { transform: [{ rotate }] }]}>
-          <Svg width={DOT_BOX} height={DOT_BOX} viewBox={`${-half} ${-half} ${DOT_BOX} ${DOT_BOX}`}>
-            <Defs>
-              <LinearGradient id={gradient} x1="0" y1="0" x2="0" y2={TRAIL} gradientUnits="userSpaceOnUse">
-                <Stop offset="0" stopColor={color} stopOpacity={0.85} />
-                <Stop offset="1" stopColor={color} stopOpacity={0} />
-              </LinearGradient>
-            </Defs>
-            <Path d={`M0,0 L0,${TRAIL}`} stroke={`url(#${gradient})`} strokeWidth={6} strokeLinecap="round" />
-          </Svg>
-        </Animated.View>
-      ) : null}
-      <Svg width={DOT_BOX} height={DOT_BOX} viewBox={`${-half} ${-half} ${DOT_BOX} ${DOT_BOX}`} style={StyleSheet.absoluteFill}>
-        <Circle
-          r={6}
-          fill={color}
-          stroke={selected ? SELECTED_RIM : delay !== null ? DELAY_COLORS[delay] : '#FFFFFF'}
-          strokeWidth={2}
-        />
-      </Svg>
-    </View>
-  );
-};
+}) => (
+  <View style={styles.dotBox} pointerEvents="none">
+    {rotate ? (
+      // Drawn pointing south (behind a vehicle heading north), turned to the heading.
+      <Animated.View style={[StyleSheet.absoluteFill, { transform: [{ rotate }] }]}>
+        {TRAIL_STEPS.map((opacity, step) => (
+          <View key={step} style={[styles.trail, { top: DOT_BOX / 2 + 3 + step * TRAIL_STEP, opacity, backgroundColor: color }]} />
+        ))}
+      </Animated.View>
+    ) : null}
+    <View
+      style={[
+        styles.dot,
+        { backgroundColor: color, borderColor: selected ? SELECTED_RIM : delay !== null ? DELAY_COLORS[delay] : '#FFFFFF' },
+      ]}
+    />
+  </View>
+);
 
 const styles = StyleSheet.create({
   box: { width: BOX, height: BOX },
   label: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, alignItems: 'center', justifyContent: 'center' },
   text: { color: '#FFFFFF', fontWeight: '800', fontSize: 12.5 },
   smallText: { fontSize: 10.5 },
-  dotBox: { width: DOT_BOX, height: DOT_BOX },
+  dotBox: { width: DOT_BOX, height: DOT_BOX, alignItems: 'center', justifyContent: 'center' },
+  dot: { width: 12, height: 12, borderRadius: 6, borderWidth: 2 },
+  trail: { position: 'absolute', left: DOT_BOX / 2 - 2.5, width: 5, height: TRAIL_STEP + 1, borderRadius: 2.5 },
 });

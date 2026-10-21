@@ -22,8 +22,10 @@ import { useNow } from '../ui/use-now';
 import { VehicleMarker } from '../ui/vehicle-marker';
 
 const WROCLAW: Region = { latitude: 51.1079, longitude: 17.0385, latitudeDelta: 0.09, longitudeDelta: 0.09 };
-/** Beyond this many markers in view (with no line filter) the map asks to zoom in. */
+/** Beyond this many drops in view (with no line filter) the map asks to zoom in. */
 const MAX_MARKERS = 220;
+/** Dots are light: zoomed out, the whole city's fleet (~550 with iMPK) is drawn. */
+const MAX_DOTS = 900;
 /** Stops appear once zoomed in this far. */
 const STOPS_DELTA = 0.022;
 /** Zoomed out further than this, vehicles are small dots. */
@@ -96,13 +98,13 @@ export default function MapScreen() {
     () => vehicles.filter((v) => (filterSet.size === 0 || filterSet.has(v.line)) && inBBox(box, v.lat, v.lon)),
     [vehicles, filterSet, box],
   );
-  const tooMany = filterSet.size === 0 && inView.length > MAX_MARKERS;
+  const dots = region.latitudeDelta > DOTS_DELTA;
+  const tooMany = filterSet.size === 0 && inView.length > (dots ? MAX_DOTS : MAX_MARKERS);
   const selected = vehicles.find((v) => v.id === selectedId) ?? null;
   const shown: LiveVehicle[] = useMemo(
     () => (tooMany ? (selected ? [selected] : []) : inView),
     [tooMany, selected, inView],
   );
-  const dots = region.latitudeDelta > DOTS_DELTA;
 
   // Drawn offsets that keep drop markers from piling up. Positions are
   // projected with the visible span, which is close enough at city scale.

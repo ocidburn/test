@@ -5,6 +5,7 @@ import { lastCheckedAt } from '../platform/timetable';
 import type { SourceDetail } from '../core/realtime/types';
 import { useLive } from '../state/live';
 import { useTimetable } from '../state/timetable';
+import { ComparisonLog } from '../ui/comparison-log';
 import { ImpkSettings } from '../ui/impk-settings';
 import { StatusBanner } from '../ui/status-banner';
 import { useTheme } from '../ui/theme';
@@ -122,13 +123,11 @@ export default function SettingsScreen() {
           const value =
             source?.idle === 'off'
               ? 'выключен'
-              : source?.idle === 'covered'
-                ? 'не нужен, пока отвечает iMPK'
-                : !source?.at
-                  ? 'ещё не опрашивался'
-                  : source.ok
-                    ? `${source.count} · ${formatInstant(source.okAt)}`
-                    : `ошибка: ${humanError(source.error ?? '?')}${retryIn(source.retryAt, now)}`;
+              : !source?.at
+                ? 'ещё не опрашивался'
+                : source.ok
+                  ? `${source.count} · ${formatInstant(source.okAt)}`
+                  : `ошибка: ${humanError(source.error ?? '?')}${retryIn(source.retryAt, now)}`;
           return (
             <View key={key} style={[styles.liveRow, { borderColor: theme.border }]}>
               <View style={styles.liveLine}>
@@ -150,6 +149,7 @@ export default function SettingsScreen() {
           );
         })}
       </View>
+      <ComparisonLog />
       <Text style={[styles.section, { color: theme.muted }]}>IMPK</Text>
       <ImpkSettings />
       <Pressable

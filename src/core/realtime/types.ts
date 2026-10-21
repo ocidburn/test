@@ -50,8 +50,8 @@ export type SourceStatus = {
   detail: SourceDetail | null;
   /** After a failure: when the source will be asked again, epoch ms. */
   retryAt: number | null;
-  /** Not asked: switched off, or not needed while iMPK answers. */
-  idle: 'off' | 'covered' | null;
+  /** Not asked: switched off. */
+  idle: 'off' | null;
 };
 
 export type SourceDetail = {

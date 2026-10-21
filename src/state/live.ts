@@ -5,6 +5,7 @@ import type { Db } from '../core/db';
 import { getLines, getStopNamesByCode, lineSets, timetableResolver, type LineInfo } from '../core/gtfs/map-queries';
 import { isTramLine } from '../core/lines';
 import { LiveTracker, type SourceName } from '../core/realtime/tracker';
+import type { ComparisonEntry } from '../core/realtime/compare';
 import type { LiveVehicle, SourceStatus } from '../core/realtime/types';
 import { clearDescribeCache, routeHeading } from '../platform/describe';
 import { impkClient } from './impk';
@@ -35,6 +36,8 @@ type LiveState = {
   vehicles: LiveVehicle[];
   at: number | null;
   status: Record<SourceName, SourceStatus> | null;
+  /** MPK and Open Data against iMPK, one entry per iMPK answer, oldest first. */
+  comparisons: ComparisonEntry[];
   lines: LineInfo[];
   /** Lines shown on the map; empty means all. */
   filter: string[];
@@ -50,6 +53,7 @@ export const useLive = create<LiveState>((set, get) => ({
   vehicles: [],
   at: null,
   status: null,
+  comparisons: [],
   lines: [],
   filter: readFilter(),
   polling: false,
@@ -122,7 +126,7 @@ const tick = async (run: number) => {
     try {
       const snapshot = await instance.poll();
       if (run !== generation) return;
-      useLive.setState({ vehicles: snapshot.vehicles, at: snapshot.at, status: snapshot.status });
+      useLive.setState({ vehicles: snapshot.vehicles, at: snapshot.at, status: snapshot.status, comparisons: snapshot.comparisons });
     } catch {
       // Each source reports its own failure in `status`; nothing else can throw here.
     }
