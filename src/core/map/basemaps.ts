@@ -133,11 +133,11 @@ export const BASEMAPS: Basemap[] = [
     labels: true,
     offline: true,
   },
-  // The same orthophoto through GUGiK's WMTS (cached tiles, Web Mercator matrix set since 2021): a trial,
-  // the layer and matrix-set names are not confirmed for EPSG:3857.
+  // The same orthophoto through GUGiK's WMTS: cached tiles, so faster than the WMS. Layer ORTOFOTOMAPA,
+  // matrix set EPSG:3857 (added Aug 2021), matrices EPSG:3857:0…19, 256 px.
   {
     id: 'gugik-orto-wmts',
-    name: 'Ортофото Польши, WMTS (проба)',
+    name: 'Ортофото Польши, WMTS',
     group: 'aerial',
     kind: 'xyz',
     url:
