@@ -2,10 +2,14 @@ import { Stack, useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Alert, FlatList, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 
+import { getStopNamesByCode } from '../../core/gtfs/map-queries';
 import { getDepartures, getStopPosts, type Departure, type StopPost } from '../../core/gtfs/queries';
+import { isTramLine } from '../../core/lines';
+import type { ImpkDeparture } from '../../core/realtime/impk';
 import { formatClock } from '../../core/time/warsaw';
 import { buildActiveOn, liveDelaysForStop, type StopLive } from '../../platform/describe';
 import { useFavorites } from '../../state/favorites';
+import { impkPostDepartures } from '../../state/impk';
 import { useLive } from '../../state/live';
 import { useReminders } from '../../state/reminders';
 import { useTimetable } from '../../state/timetable';
@@ -26,6 +30,20 @@ const countdown = (at: number, now: number) => {
 const rowKey = (departure: { tripIdx: number; serviceDay: number; stopIdx: number }) =>
   `${departure.tripIdx}-${departure.serviceDay}-${departure.stopIdx}`;
 
+/** A board row, from the timetable or from iMPK. */
+type Row = {
+  key: string;
+  line: string;
+  tram: boolean;
+  headsign: string | null;
+  stopCode: string | null;
+  scheduledAt: number;
+  /** Expected departure: scheduled, or moved by the live estimate. */
+  at: number;
+  delaySeconds: number | null;
+  isLive: boolean;
+};
+
 const delayLabel = (seconds: number) => {
   const minutes = Math.round(seconds / 60);
   if (minutes === 0) return 'вовремя';
@@ -37,6 +55,7 @@ export default function StopScreen() {
   const { name } = useLocalSearchParams<{ name: string }>();
   const db = useTimetable((state) => state.db);
   const vehicles = useLive((state) => state.vehicles);
+  const lineInfo = useLive((state) => state.lines);
   const isFavorite = useFavorites((state) => (name ? state.stops.includes(name) : false));
   const toggleFavorite = useFavorites((state) => state.toggle);
   const reminders = useReminders((state) => state.items);
@@ -47,6 +66,9 @@ export default function StopScreen() {
   const [selectedPost, setSelectedPost] = useState<number | null>(null);
   const [departures, setDepartures] = useState<Departure[]>([]);
   const [live, setLive] = useState<Map<string, StopLive>>(new Map());
+  // iMPK's own board for these posts; null while iMPK is off or not answering.
+  const [impk, setImpk] = useState<(ImpkDeparture & { stopCode: string })[] | null>(null);
+  const [stopNames, setStopNames] = useState<Map<string, string>>(() => new Map());
   const [loaded, setLoaded] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const now = useNow(15_000);
@@ -60,6 +82,32 @@ export default function StopScreen() {
     () => (selectedPost === null ? posts.map((post) => post.stopIdx) : [selectedPost]),
     [posts, selectedPost],
   );
+  const codes = useMemo(
+    () => posts.filter((post) => post.code && stopIdxs.includes(post.stopIdx)).map((post) => post.code!),
+    [posts, stopIdxs],
+  );
+  const codesKey = codes.join(',');
+
+  useEffect(() => {
+    if (!db) return;
+    getStopNamesByCode(db).then(setStopNames).catch(() => {});
+  }, [db]);
+
+  // iMPK's board, refreshed with the timetable's; any failure falls back to the timetable.
+  useEffect(() => {
+    if (!codesKey) return;
+    let cancelled = false;
+    const run = () =>
+      impkPostDepartures(codesKey.split(','))
+        .then((list) => !cancelled && setImpk(list))
+        .catch(() => !cancelled && setImpk(null));
+    run();
+    const timer = setInterval(run, REFRESH_MS);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [codesKey]);
 
   const fetchDepartures = useCallback(
     () => (db && stopIdxs.length ? getDepartures(db, stopIdxs, { windowMinutes: 180, limit: 80 }) : Promise.resolve([])),
@@ -91,7 +139,7 @@ export default function StopScreen() {
   useEffect(() => {
     // Nothing to match: leave the last overlay, which the next poll refreshes
     // (stale entries only match by exact trip id, so they fall off on their own).
-    if (!db || !stopSet.size || !lineSet.size || !vehicles.length) return;
+    if (!db || impk || !stopSet.size || !lineSet.size || !vehicles.length) return;
     let cancelled = false;
     (async () => {
       const activeOn = await buildActiveOn(db, Date.now());
@@ -101,7 +149,7 @@ export default function StopScreen() {
     return () => {
       cancelled = true;
     };
-  }, [db, stopSet, lineSet, vehicles]);
+  }, [db, impk, stopSet, lineSet, vehicles]);
 
   const onRefresh = async () => {
     setRefreshing(true);
@@ -112,12 +160,47 @@ export default function StopScreen() {
     }
   };
 
-  const rows = departures
-    .map((departure) => {
-      const match = live.get(String(departure.tripIdx));
-      const at = match ? now + match.etaSeconds * 1000 : departure.at;
-      return { departure, at, delaySeconds: match?.delaySeconds ?? null, isLive: !!match };
-    })
+  const tramByLine = useMemo(() => new Map(lineInfo.map((line) => [line.name, line.tram])), [lineInfo]);
+  const byCourse = useMemo(() => {
+    const map = new Map<string, (typeof vehicles)[number]>();
+    for (const vehicle of vehicles) if (vehicle.course) map.set(vehicle.course, vehicle);
+    return map;
+  }, [vehicles]);
+  const codeOf = useMemo(() => new Map(posts.map((post) => [post.stopIdx, post.code])), [posts]);
+
+  const rows: Row[] = (
+    impk
+      ? impk.map((departure): Row => {
+          // The course's vehicle on the map carries the run's delay; early runs wait for their time.
+          const vehicle = departure.course ? byCourse.get(departure.course) : undefined;
+          const delaySeconds = vehicle?.delaySeconds ?? null;
+          return {
+            key: `impk-${departure.course ?? `${departure.line}-${departure.scheduledAt}`}-${departure.stopCode}`,
+            line: departure.line,
+            tram: tramByLine.get(departure.line) ?? isTramLine(departure.line),
+            headsign: (departure.destination && stopNames.get(departure.destination)) || null,
+            stopCode: departure.stopCode,
+            scheduledAt: departure.scheduledAt,
+            at: departure.scheduledAt + Math.max(0, delaySeconds ?? 0) * 1000,
+            delaySeconds,
+            isLive: !!vehicle,
+          };
+        })
+      : departures.map((departure): Row => {
+          const match = live.get(String(departure.tripIdx));
+          return {
+            key: rowKey(departure),
+            line: departure.line,
+            tram: departure.tram,
+            headsign: departure.headsign,
+            stopCode: departure.stopCode ?? codeOf.get(departure.stopIdx) ?? null,
+            scheduledAt: departure.at,
+            at: match ? now + match.etaSeconds * 1000 : departure.at,
+            delaySeconds: match?.delaySeconds ?? null,
+            isLive: !!match,
+          };
+        })
+  )
     .filter((row) => row.at >= now - 60_000)
     .sort((a, b) => a.at - b.at);
   const liveCount = rows.filter((row) => row.isLive).length;
@@ -127,10 +210,10 @@ export default function StopScreen() {
   // more than a minute gets its reminder moved too.
   const drift = rows
     .filter((row) => {
-      const reminder = reminderByKey.get(rowKey(row.departure));
+      const reminder = reminderByKey.get(row.key);
       return reminder && Math.abs(reminder.departAt - row.at) > 60_000;
     })
-    .map((row) => `${rowKey(row.departure)}@${Math.round(row.at / 60_000)}`)
+    .map((row) => `${row.key}@${Math.round(row.at / 60_000)}`)
     .join(',');
   useEffect(() => {
     if (!drift) return;
@@ -140,9 +223,9 @@ export default function StopScreen() {
     }
   }, [drift, rescheduleReminder]);
 
-  const onRowPress = (row: (typeof rows)[number]) => {
-    const key = rowKey(row.departure);
-    const title = `${row.departure.line}${row.departure.headsign ? ` → ${row.departure.headsign}` : ''}`;
+  const onRowPress = (row: Row) => {
+    const key = row.key;
+    const title = `${row.line}${row.headsign ? ` → ${row.headsign}` : ''}`;
     const existing = reminderByKey.get(key);
     if (existing) {
       Alert.alert(title, `Напоминание за ${existing.minutesBefore} мин до ${formatClock(existing.departAt)}`, [
@@ -154,8 +237,8 @@ export default function StopScreen() {
     const remind = (minutesBefore: number) =>
       addReminder(key, {
         stop: name ?? '',
-        line: row.departure.line,
-        headsign: row.departure.headsign,
+        line: row.line,
+        headsign: row.headsign,
         departAt: row.at,
         minutesBefore,
       }).catch((error: Error) => Alert.alert('Не получилось', error.message));
@@ -209,7 +292,7 @@ export default function StopScreen() {
       ) : null}
       <FlatList
         data={rows}
-        keyExtractor={(item) => rowKey(item.departure)}
+        keyExtractor={(item) => item.key}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
         contentContainerStyle={styles.list}
         ItemSeparatorComponent={() => <View style={[styles.separator, { backgroundColor: theme.border }]} />}
@@ -217,7 +300,6 @@ export default function StopScreen() {
           loaded ? <Text style={[styles.empty, { color: theme.muted }]}>Ближайшие 3 часа отправлений нет</Text> : undefined
         }
         renderItem={({ item }) => {
-          const { departure } = item;
           const soon = item.at - now < 15 * 60_000;
           const late = item.delaySeconds !== null && item.delaySeconds >= 120;
           return (
@@ -225,17 +307,17 @@ export default function StopScreen() {
               onPress={() => onRowPress(item)}
               style={({ pressed }) => [styles.row, { backgroundColor: pressed ? theme.inputBackground : theme.surface }]}
             >
-              <LineBadge line={departure.line} tram={departure.tram} />
+              <LineBadge line={item.line} tram={item.tram} />
               <View style={styles.middle}>
                 <Text style={[styles.headsign, { color: theme.text }]} numberOfLines={1}>
-                  {departure.headsign ?? '—'}
+                  {item.headsign ?? '—'}
                 </Text>
                 <Text style={[styles.post, { color: theme.muted }]} numberOfLines={1}>
                   {[
-                    posts.length > 1 && selectedPost === null ? `słupek ${departure.stopCode ?? ''}` : null,
-                    item.isLive && item.at !== departure.at
-                      ? `${formatClock(item.at)} (по расписанию ${formatClock(departure.at)})`
-                      : formatClock(departure.at),
+                    posts.length > 1 && selectedPost === null ? `słupek ${item.stopCode ?? ''}` : null,
+                    item.isLive && item.at !== item.scheduledAt
+                      ? `${formatClock(item.at)} (по расписанию ${formatClock(item.scheduledAt)})`
+                      : formatClock(item.scheduledAt),
                   ]
                     .filter(Boolean)
                     .join(' · ')}
@@ -243,7 +325,7 @@ export default function StopScreen() {
               </View>
               <View style={styles.right}>
                 <View style={styles.timeRow}>
-                  {reminderByKey.has(rowKey(departure)) ? <Text style={styles.bell}>🔔</Text> : null}
+                  {reminderByKey.has(item.key) ? <Text style={styles.bell}>🔔</Text> : null}
                   {item.isLive ? <View style={[styles.dot, { backgroundColor: '#16A34A' }]} /> : null}
                   <Text style={[styles.time, { color: soon ? theme.amber : theme.text }]}>{countdown(item.at, now)}</Text>
                 </View>
@@ -256,9 +338,11 @@ export default function StopScreen() {
         }}
       />
       <Text style={[styles.footnote, { color: theme.muted }]}>
-        {liveCount
-          ? `Онлайн: ${liveCount} рейсов отслеживаются · задержка по расписанию GTFS`
-          : 'По расписанию GTFS · онлайн появится, когда рейс выйдет на линию'}
+        {impk
+          ? `iMPK${liveCount ? ` · онлайн: ${liveCount} рейсов на линии` : ''}`
+          : liveCount
+            ? `Онлайн: ${liveCount} рейсов отслеживаются · задержка по расписанию GTFS`
+            : 'По расписанию GTFS · онлайн появится, когда рейс выйдет на линию'}
         {' · нажмите на рейс, чтобы напомнить'}
       </Text>
     </View>

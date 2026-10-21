@@ -18,6 +18,8 @@ export type LiveVehicle = {
   /** Destination when a feed states it (Kłosok); otherwise worked out from the route. */
   headsign: string | null;
   tripId: string | null;
+  /** iMPK's course (run) id: the same number its stop boards list departures by. */
+  course?: string | null;
   /** Seconds late (negative: early), only when a feed publishes it. */
   delaySeconds: number | null;
   /** When the position was taken, epoch ms. MPK states no time: the moment it was fetched. */

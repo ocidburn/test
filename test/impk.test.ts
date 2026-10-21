@@ -1,4 +1,4 @@
-import { parseImpkPositions } from '../src/core/realtime/impk';
+import { parseImpkPositions, parseImpkPostInfo } from '../src/core/realtime/impk';
 import type { TripResolver } from '../src/core/realtime/klosok';
 import { LiveTracker } from '../src/core/realtime/tracker';
 
@@ -24,6 +24,7 @@ describe('iMPK getPositions', () => {
     ]);
     expect(vehicles[0]).toMatchObject({ lat: 51.11346, lon: 17.091331, source: 'impk', heading: null, positionAt: SERVER_AT });
     expect(destinations.get('impk:3112')).toBe('18401');
+    expect(vehicles[3].course).toBe('29254770');
     expect(detail).toEqual({ total: 4, rejected: {}, medianAgeSeconds: 4 });
   });
 
@@ -66,6 +67,31 @@ describe('iMPK getPositions', () => {
     expect(() => parseImpkPositions('<html>', { now, isTram })).toThrow('not JSON');
     expect(() => parseImpkPositions('{"error":1}', { now, isTram })).toThrow('not a list');
     expect(() => parseImpkPositions('[]', { now, isTram })).toThrow('empty list');
+  });
+});
+
+describe('iMPK getPostInfo', () => {
+  test('reads a real answer, soonest first', () => {
+    // The start of a real answer for post 21011 (2026-10-21, 14:48 Wrocław).
+    const body = JSON.stringify([
+      { l: '21', d: '21037', t: '2026-10-21 14:51:00', c: 29254717 },
+      { l: '8', d: '21021', t: '2026-10-21 14:50:00', c: 29256948 },
+      { l: '16', d: '21021', t: '2026-10-21 14:55:00', c: 29254514 },
+      { l: '18', d: '21037', t: '2026-10-21 14:58:00', c: 29254648 },
+    ]);
+    expect(parseImpkPostInfo(body)).toEqual([
+      { line: '8', destination: '21021', scheduledAt: Date.parse('2026-10-21T12:50:00Z'), course: '29256948' },
+      { line: '21', destination: '21037', scheduledAt: Date.parse('2026-10-21T12:51:00Z'), course: '29254717' },
+      { line: '16', destination: '21021', scheduledAt: Date.parse('2026-10-21T12:55:00Z'), course: '29254514' },
+      { line: '18', destination: '21037', scheduledAt: Date.parse('2026-10-21T12:58:00Z'), course: '29254648' },
+    ]);
+  });
+
+  test('an empty board is empty; an unreadable one is an error', () => {
+    expect(parseImpkPostInfo('[]')).toEqual([]);
+    expect(parseImpkPostInfo(JSON.stringify([{ l: '8' }, 'x', { l: '9', t: '2026-10-21 15:00:00' }]))).toHaveLength(1);
+    expect(() => parseImpkPostInfo('<html>')).toThrow('not JSON');
+    expect(() => parseImpkPostInfo('{}')).toThrow('not a list');
   });
 });
 

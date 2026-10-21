@@ -140,6 +140,7 @@ export const parseImpkPositions = (
     const delay = typeof delayMs === 'number' && Number.isFinite(delayMs) ? Math.round(delayMs / 1000) : null;
     const id = `impk:${number}`;
     const destination = str(field(raw, 'd', 'direction'));
+    const course = str(field(raw, 'c', 'course'));
     const type = str(field(raw, 't', 'type')).toLowerCase();
     if (destination) destinations.set(id, destination);
     vehicles.push({
@@ -154,6 +155,7 @@ export const parseImpkPositions = (
       brigade: null,
       headsign: null,
       tripId: null,
+      course: course || null,
       delaySeconds: delay,
       positionAt,
     });
@@ -167,4 +169,41 @@ export const parseImpkPositions = (
       medianAgeSeconds: serverAt === null ? null : Math.round((now - serverAt) / 1000),
     },
   };
+};
+
+/**
+ * `getPostInfo&symbol=<post>` answers the post's next departures, a JSON list:
+ *
+ *   { l: "21", d: "21037", t: "2026-10-21 14:51:00", c: 29254717 }
+ *
+ * Read from a real answer: line, terminus post symbol, time (Wrocław wall
+ * clock, always whole minutes, so read as the scheduled time) and the course,
+ * the same id as `c` in getPositions — that is how a departure meets its
+ * vehicle on the map.
+ */
+export type ImpkDeparture = { line: string; destination: string | null; scheduledAt: number; course: string | null };
+
+export const parseImpkPostInfo = (body: string): ImpkDeparture[] => {
+  let data: unknown;
+  try {
+    data = JSON.parse(body);
+  } catch {
+    throw new Error(body.trim() ? `not JSON: ${body.slice(0, 60).replace(/\s+/g, ' ')}` : 'empty body');
+  }
+  if (!Array.isArray(data)) throw new Error('unexpected answer: not a list');
+  const departures: ImpkDeparture[] = [];
+  for (const item of data) {
+    if (!item || typeof item !== 'object') continue;
+    const raw = item as Raw;
+    const line = str(field(raw, 'l', 'line')).toUpperCase();
+    const scheduledAt = parseWarsawWallClock(field(raw, 't', 'time'));
+    if (!line || scheduledAt === null) continue;
+    departures.push({
+      line,
+      destination: str(field(raw, 'd', 'direction')) || null,
+      scheduledAt,
+      course: str(field(raw, 'c', 'course')) || null,
+    });
+  }
+  return departures.sort((a, b) => a.scheduledAt - b.scheduledAt);
 };

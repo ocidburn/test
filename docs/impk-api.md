@@ -43,6 +43,19 @@ post), `direction` (= `d`), `delay` (= `e`). That confirms the short keys' meani
 values are not 5-digit post symbols (e.g. `"50000057"` on line 100). Extra parameters such as
 `symbol=…` are ignored by `getPositions`.
 
+## `getPostInfo&symbol=<post>` — seen in a real answer (2026-10-21)
+
+`application/json;charset=utf-8`, the post's next departures (15 for post 21011 at 14:48):
+
+```json
+[{"l":"21","d":"21037","t":"2026-10-21 14:51:00","c":29254717},
+ {"l":"8","d":"21021","t":"2026-10-21 14:50:00","c":29256948}]
+```
+
+`l` line, `d` terminus post symbol, `t` time (Wrocław wall clock), `c` course — the same id as `c`
+in `getPositions`. Not sorted. Every `t` is a whole minute, so it is read as the scheduled time; the
+board adds the delay of the course's vehicle when it is on the map (late only: an early run waits).
+
 Other names in the APK without a confirmed URL (`getPosts`, `getPostsLines`, `getLines`,
 `getVehicles`, `getVehiclesInfo`, `getCourse`, …) may be client methods, not operations.
 The APK also carries TrustKit, i.e. the official app pins the server's certificate: a normal,

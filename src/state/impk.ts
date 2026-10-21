@@ -3,7 +3,7 @@ import Storage from 'expo-sqlite/kv-store';
 import { create } from 'zustand';
 
 import { DigestSession } from '../core/net/digest';
-import { IMPK_DEFAULT_URL, parseParams, probeImpk } from '../core/realtime/impk';
+import { IMPK_DEFAULT_URL, impkUrl, parseImpkPostInfo, parseParams, probeImpk, type ImpkDeparture } from '../core/realtime/impk';
 
 /** How much of an answer the Data screen keeps, to copy and send. */
 const SHOWN_CHARS = 4000;
@@ -47,6 +47,23 @@ export const impkClient = async (): Promise<{ url: string; session: DigestSessio
   const key = `${url}\n${username}\n${password}`;
   if (client?.key !== key) client = { key, session: new DigestSession({ username, password }) };
   return { url, session: client.session };
+};
+
+/**
+ * Next departures from a stop's posts, as iMPK lists them; null while iMPK is
+ * off. A post that fails fails the whole call, so the board falls back to the
+ * timetable rather than showing half a stop.
+ */
+export const impkPostDepartures = async (codes: string[]): Promise<(ImpkDeparture & { stopCode: string })[] | null> => {
+  const impk = await impkClient();
+  if (!impk) return null;
+  // One after another: the Digest session counts its requests, and a server may refuse them out of order.
+  const departures: (ImpkDeparture & { stopCode: string })[] = [];
+  for (const code of codes) {
+    const body = await impk.session.fetchText(impkUrl(impk.url, 'getPostInfo', { symbol: code }));
+    for (const departure of parseImpkPostInfo(body)) departures.push({ ...departure, stopCode: code });
+  }
+  return departures;
 };
 
 export const useImpk = create<ImpkState>((set, get) => ({
