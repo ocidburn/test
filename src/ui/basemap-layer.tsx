@@ -3,9 +3,11 @@ import { useEffect, useState } from 'react';
 import { StyleSheet, Text, useColorScheme, View } from 'react-native';
 import { UrlTile, WMSTile, type MapType, type Region } from 'react-native-maps';
 
-import { basemapById, keyFor, KEY_NAMES, tileTemplate, type Basemap } from '../core/map/basemaps';
+import { basemapById, canGoOffline, keyFor, KEY_NAMES, tileTemplate, type Basemap } from '../core/map/basemaps';
 import { fetchGoogleCopyright, googleTileUrl, type GoogleSession } from '../core/map/google-tiles';
+import { tileDirectory } from '../platform/offline-tiles';
 import { googleSession, useBasemap } from '../state/basemap';
+import { useOffline } from '../state/offline';
 
 type Tile = { kind: 'xyz' | 'wms'; url: string; maxZoom: number; cacheSeconds: number; cacheDir: string | null };
 
@@ -19,10 +21,10 @@ export type BasemapLayer = {
   problem: string | null;
 };
 
-const cacheDir = (id: string) => {
+/** Layers that may go offline keep their tiles with the offline package; the others in the purgeable cache. */
+const cacheDir = (basemap: Basemap, id: string) => {
   try {
-    const dir = new Directory(Paths.cache, 'tiles', id);
-    return dir.uri;
+    return canGoOffline(basemap) ? tileDirectory(id).uri : new Directory(Paths.cache, 'tiles', id).uri;
   } catch {
     return null;
   }
@@ -36,6 +38,7 @@ export const useBasemapLayer = (region: Region): BasemapLayer => {
   const loaded = useBasemap((state) => state.loaded);
   const load = useBasemap((state) => state.load);
   const basemap = basemapById(selected);
+  const offlinePackage = useOffline((state) => state.packages[basemap.id]);
   const [google, setGoogle] = useState<{ id: string; session: GoogleSession | null; error: string | null } | null>(null);
   const [copyright, setCopyright] = useState<string | null>(null);
 
@@ -103,7 +106,14 @@ export const useBasemapLayer = (region: Region): BasemapLayer => {
     basemap,
     // Apple's street names stay over photos (hybrid); maps draw their own (satellite has none).
     mapType: basemap.labels ? 'hybrid' : 'satellite',
-    tile: { kind: basemap.kind, url, maxZoom: basemap.maxZoom, cacheSeconds: basemap.cacheSeconds, cacheDir: cacheDir(basemap.id + (dark ? '-dark' : '')) },
+    tile: {
+      kind: basemap.kind,
+      url,
+      maxZoom: basemap.maxZoom,
+      // With an offline package its tiles are used as they are and never asked for again (max age 0).
+      cacheSeconds: offlinePackage && canGoOffline(basemap) ? 0 : basemap.cacheSeconds,
+      cacheDir: cacheDir(basemap, basemap.id + (dark && basemap.darkUrl ? '-dark' : '')),
+    },
     attribution: basemap.attribution,
     problem: null,
   };
@@ -120,7 +130,8 @@ export function BasemapTiles({ tile }: { tile: Tile | null }) {
     maximumZ: 22,
     maximumNativeZ: tile.maxZoom,
     tileSize: 256,
-    ...(tile.cacheDir && tile.cacheSeconds > 0 ? { tileCachePath: tile.cacheDir, tileCacheMaxAge: tile.cacheSeconds } : {}),
+    // A max age of 0 keeps cached tiles for good (offline packages); Google's (no cacheDir) are not stored.
+    ...(tile.cacheDir ? { tileCachePath: tile.cacheDir, tileCacheMaxAge: tile.cacheSeconds } : {}),
   };
   // A new template (dark mode, a renewed Google session) is a new overlay.
   return tile.kind === 'wms' ? <WMSTile key={tile.url} urlTemplate={tile.url} {...common} /> : <UrlTile key={tile.url} urlTemplate={tile.url} {...common} />;

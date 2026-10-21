@@ -4,6 +4,7 @@ import { Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-nat
 import { lineToType } from '../core/lines';
 import { useLive } from '../state/live';
 import { BasemapPicker } from '../ui/basemap-picker';
+import { OfflineCard } from '../ui/offline-card';
 import { lineColor, useTheme } from '../ui/theme';
 import { DELAY_COLORS } from '../ui/vehicle-marker';
 
@@ -34,6 +35,7 @@ export default function LinesScreen() {
   return (
     <ScrollView contentContainerStyle={styles.content}>
       <BasemapPicker />
+      <OfflineCard />
       <View style={[styles.layer, { backgroundColor: theme.surface }]}>
         <View style={styles.layerRow}>
           <Text style={{ color: theme.text, fontSize: 16, flex: 1 }}>Опоздания на карте</Text>

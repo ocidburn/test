@@ -25,6 +25,8 @@ export type Basemap =
       cacheSeconds: number;
       /** Apple's street names over the tiles: for photos, which have none of their own. */
       labels?: boolean;
+      /** Its terms allow downloading an area for offline use (open data); most providers forbid it. */
+      offline?: boolean;
     })
   | (Common & { kind: 'google'; mapType: 'roadmap' | 'satellite' | 'terrain'; hybrid: boolean });
 
@@ -129,6 +131,7 @@ export const BASEMAPS: Basemap[] = [
     attribution: 'Ortofotomapa: GUGiK, geoportal.gov.pl',
     cacheSeconds: 30 * 86_400,
     labels: true,
+    offline: true,
   },
   // The same orthophoto through GUGiK's WMTS (cached tiles, Web Mercator matrix set since 2021): a trial,
   // the layer and matrix-set names are not confirmed for EPSG:3857.
@@ -144,6 +147,7 @@ export const BASEMAPS: Basemap[] = [
     attribution: 'Ortofotomapa: GUGiK, geoportal.gov.pl',
     cacheSeconds: 30 * 86_400,
     labels: true,
+    offline: true,
   },
   { id: 'google-roadmap', name: 'Карта', group: 'google', kind: 'google', mapType: 'roadmap', hybrid: false },
   { id: 'google-satellite', name: 'Спутник', group: 'google', kind: 'google', mapType: 'satellite', hybrid: false },
@@ -154,6 +158,8 @@ export const BASEMAPS: Basemap[] = [
 /** Apple's 3D views: the camera tilts so buildings stand up. */
 export const isThreeD = (basemap: Basemap) =>
   basemap.kind === 'apple' && (basemap.mapType === 'satelliteFlyover' || basemap.mapType === 'hybridFlyover');
+
+export const canGoOffline = (basemap: Basemap) => (basemap.kind === 'xyz' || basemap.kind === 'wms') && !!basemap.offline;
 
 export const basemapById = (id: string): Basemap => BASEMAPS.find((b) => b.id === id) ?? BASEMAPS[0];
 

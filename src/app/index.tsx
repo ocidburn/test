@@ -14,6 +14,7 @@ import { spreadPoints, type Offset } from '../core/spread';
 import { buildActiveOn, describeVehicle } from '../platform/describe';
 import { useFavorites } from '../state/favorites';
 import { startLive, stopLive, useLive } from '../state/live';
+import { useMapView } from '../state/map-view';
 import { useTimetable } from '../state/timetable';
 import { isThreeD } from '../core/map/basemaps';
 import { BasemapAttribution, BasemapTiles, useBasemapLayer } from '../ui/basemap-layer';
@@ -69,6 +70,15 @@ export default function MapScreen() {
   const [located, setLocated] = useState(false);
   const [mapSize, setMapSize] = useState({ width: 0, height: 0 });
   const basemap = useBasemapLayer(region);
+  const setViewBox = useMapView((state) => state.setBox);
+  useEffect(() => {
+    setViewBox({
+      west: region.longitude - region.longitudeDelta / 2,
+      east: region.longitude + region.longitudeDelta / 2,
+      south: region.latitude - region.latitudeDelta / 2,
+      north: region.latitude + region.latitudeDelta / 2,
+    });
+  }, [region, setViewBox]);
   const threeD = isThreeD(basemap.basemap);
   useEffect(() => {
     mapRef.current?.animateCamera({ pitch: threeD ? 60 : 0 }, { duration: 600 });
