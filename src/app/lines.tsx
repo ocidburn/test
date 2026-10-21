@@ -42,10 +42,11 @@ export default function LinesScreen() {
             <Legend color={DELAY_COLORS.ok} label="до 2 мин" muted={theme.muted} />
             <Legend color={DELAY_COLORS.mid} label="2–5 мин" muted={theme.muted} />
             <Legend color={DELAY_COLORS.late} label="больше 5" muted={theme.muted} />
+            <Legend color={DELAY_COLORS.none} label="нет данных" muted={theme.muted} />
           </View>
         ) : null}
         <Text style={{ color: theme.muted, fontSize: 13 }}>
-          Кольцо вокруг машины. Без кольца — рейс не определён, опоздание не угадывается.
+          Кольцо вокруг машины. Серое — рейс не определён, опоздание не угадывается.
         </Text>
       </View>
       <View style={styles.actions}>
@@ -103,7 +104,7 @@ const Legend = ({ color, label, muted }: { color: string; label: string; muted: 
 const styles = StyleSheet.create({
   layer: { borderRadius: 12, padding: 12, gap: 8 },
   layerRow: { flexDirection: 'row', alignItems: 'center' },
-  legend: { flexDirection: 'row', gap: 16 },
+  legend: { flexDirection: 'row', flexWrap: 'wrap', columnGap: 16, rowGap: 6 },
   legendItem: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   legendRing: { width: 14, height: 14, borderRadius: 7, borderWidth: 3 },
   content: { padding: 16, paddingBottom: 40, gap: 20 },

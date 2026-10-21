@@ -320,7 +320,7 @@ export default function MapScreen() {
               selected={isSelected}
               // The selected vehicle keeps its number even when zoomed out.
               look={dots && !isSelected ? 'dot' : 'drop'}
-              delay={showDelays ? delayStatus(delays.get(vehicle.id) ?? vehicle.delaySeconds) : 'none'}
+              delay={showDelays ? delayStatus(delays.get(vehicle.id) ?? vehicle.delaySeconds) : null}
               offsetX={offset.dx}
               offsetY={offset.dy}
               onSelect={setSelectedId}
