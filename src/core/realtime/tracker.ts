@@ -9,12 +9,22 @@ import { emptyStatus, type LiveVehicle, type SourceDetail, type SourceStatus } f
 const KLOSOK_DEDUPE_METERS = 300;
 /** Movement below this is GPS noise, not a heading. */
 const HEADING_MIN_METERS = 8;
-/** MPK states no position time; its last answer is trusted this long. */
-const MPK_STALE_MS = 60_000;
-const OPEN_DATA_STALE_MS = 90_000;
-const KLOSOK_STALE_MS = 90_000;
-
 export type SourceName = 'mpk' | 'openData' | 'klosok';
+
+/**
+ * How often each source is asked, and how long its last answer is trusted.
+ * Open Data's table is large and its positions lag minutes behind, so once a
+ * minute is plenty; MPK states no position time, so its answer ages fast.
+ */
+const SCHEDULE: Record<SourceName, { everyMs: number; staleMs: number }> = {
+  mpk: { everyMs: 0, staleMs: 60_000 },
+  openData: { everyMs: 60_000, staleMs: 150_000 },
+  klosok: { everyMs: 0, staleMs: 90_000 },
+};
+
+/** A failing source waits 30 s, then 60, 120 … up to 5 min before it is asked again. */
+const BACKOFF_BASE_MS = 30_000;
+const BACKOFF_MAX_MS = 300_000;
 
 export type LiveSnapshot = {
   vehicles: LiveVehicle[];
@@ -44,6 +54,12 @@ export class LiveTracker {
   };
   private last: Record<SourceName, { vehicles: LiveVehicle[]; at: number } | null> = { mpk: null, openData: null, klosok: null };
   private encoding: Encoding | null = null;
+  /** Per source: consecutive failures, and the earliest time to ask again. */
+  private readonly pace: Record<SourceName, { failures: number; nextAt: number }> = {
+    mpk: { failures: 0, nextAt: 0 },
+    openData: { failures: 0, nextAt: 0 },
+    klosok: { failures: 0, nextAt: 0 },
+  };
   private readonly history = new Map<string, { lat: number; lon: number; heading: number | null; seen: number }>();
   private readonly now: () => number;
 
@@ -53,14 +69,21 @@ export class LiveTracker {
 
   private async run(name: SourceName, task: () => Promise<{ vehicles: LiveVehicle[]; detail?: SourceDetail }>) {
     const at = this.now();
+    const pace = this.pace[name];
+    // Not due yet (its interval, or a pause after failures): keep the last answer.
+    if (at < pace.nextAt) return;
     const status = this.status[name];
     status.at = at;
     try {
       const { vehicles, detail = null } = await task();
       this.last[name] = { vehicles, at };
-      Object.assign(status, { ok: true, count: vehicles.length, error: null, okAt: at, detail });
+      pace.failures = 0;
+      pace.nextAt = at + SCHEDULE[name].everyMs;
+      Object.assign(status, { ok: true, count: vehicles.length, error: null, okAt: at, detail, retryAt: null });
     } catch (error) {
-      Object.assign(status, { ok: false, error: (error as Error).message });
+      pace.failures += 1;
+      pace.nextAt = at + Math.min(BACKOFF_BASE_MS * 2 ** (pace.failures - 1), BACKOFF_MAX_MS);
+      Object.assign(status, { ok: false, error: (error as Error).message, retryAt: pace.nextAt });
     }
   }
 
@@ -91,8 +114,11 @@ export class LiveTracker {
   /** Merge whatever each source last returned, while it is still fresh. */
   combine(): LiveSnapshot {
     const now = this.now();
-    const merged = mergeWithOpenData(this.fresh('mpk', MPK_STALE_MS, now), this.fresh('openData', OPEN_DATA_STALE_MS, now));
-    const klosok = this.fresh('klosok', KLOSOK_STALE_MS, now);
+    const merged = mergeWithOpenData(
+      this.fresh('mpk', SCHEDULE.mpk.staleMs, now),
+      this.fresh('openData', SCHEDULE.openData.staleMs, now),
+    );
+    const klosok = this.fresh('klosok', SCHEDULE.klosok.staleMs, now);
     const vehicles = [
       ...merged.filter(
         (vehicle) =>

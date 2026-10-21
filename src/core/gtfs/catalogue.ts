@@ -228,7 +228,7 @@ export const resolveFeedCandidates = async (
         if (!listing.length) {
           // No metadata endpoint answered. Ids are newest upload first and
           // every archive states its own dates, so the download step decides.
-          log(`no file metadata; queueing ${config.maxIdDownloads} newest ids for download`);
+          log(`портал не отдал имена файлов; проверю ${config.maxIdDownloads} самых новых по датам внутри архивов`);
           listing = ids.slice(0, config.maxIdDownloads).map((id) => ({
             name: null,
             url: `${config.downloadBase}/${id}/`,
@@ -238,10 +238,10 @@ export const resolveFeedCandidates = async (
       }
     }
     const ordered = orderByEffectiveDate(listing, now);
-    if (!ordered.length) log(`catalogue ${config.catalogueUrl} returned no usable entries`);
+    if (!ordered.length) log(`каталог ${config.catalogueUrl} не содержит подходящих файлов`);
     candidates.push(...ordered.map(({ name, url }) => ({ name, url })));
   } catch (error) {
-    log(`catalogue lookup failed: ${(error as Error).message}`);
+    log(`каталог недоступен: ${(error as Error).message}`);
   }
 
   for (const host of config.ckanHosts) {

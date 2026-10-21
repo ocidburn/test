@@ -7,6 +7,7 @@ import { useLive } from '../state/live';
 import { useTimetable } from '../state/timetable';
 import { StatusBanner } from '../ui/status-banner';
 import { useTheme } from '../ui/theme';
+import { useNow } from '../ui/use-now';
 
 const formatInstant = (ms: number | null | undefined) => {
   if (!ms) return '—';
@@ -51,6 +52,21 @@ const formatDetail = (detail: SourceDetail) => {
   return parts.join(' · ');
 };
 
+/** Source errors in plain Russian; anything unrecognised is shown as is. */
+const humanError = (message: string) =>
+  message
+    .replace(/empty body \(HTTP (\d+)\)/g, 'пустой ответ сервера (HTTP $1)')
+    .replace(/not JSON \(HTTP (\d+)\)/g, 'ответ не JSON (HTTP $1)')
+    .replace(/timed out after (\d+) ms: \S+/g, 'нет ответа за $1 мс')
+    .replace(/\bempty list\b/g, 'пустой список')
+    .replace(/Network request failed/g, 'нет сети');
+
+const retryIn = (retryAt: number | null, now: number) => {
+  if (!retryAt) return '';
+  const seconds = Math.max(0, Math.round((retryAt - now) / 1000));
+  return seconds < 90 ? ` · повтор через ${seconds} с` : ` · повтор через ${Math.round(seconds / 60)} мин`;
+};
+
 const REASONS: Record<string, string> = {
   'installed timetable is the best available': 'Установлено актуальное расписание',
   'no better snapshot found': 'Новее ничего нет',
@@ -65,6 +81,7 @@ export default function SettingsScreen() {
   const log = useTimetable((state) => state.log);
   const update = useTimetable((state) => state.update);
   const live = useLive((state) => state.status);
+  const now = useNow(5_000);
 
   const rows: [string, string][] = [
     ['Снимок', meta?.sourceName ?? snapshotFromUrl(meta?.sourceUrl ?? null)],
@@ -98,7 +115,7 @@ export default function SettingsScreen() {
             ? 'ещё не опрашивался'
             : source.ok
               ? `${source.count} · ${formatInstant(source.okAt)}`
-              : `ошибка: ${source.error ?? '?'}`;
+              : `ошибка: ${humanError(source.error ?? '?')}${retryIn(source.retryAt, now)}`;
           return (
             <View key={key} style={[styles.liveRow, { borderColor: theme.border }]}>
               <View style={styles.liveLine}>

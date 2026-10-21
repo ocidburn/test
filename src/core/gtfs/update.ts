@@ -2,7 +2,13 @@ import { isInForce, type FeedWindow } from './archive';
 import type { FeedCandidate } from './catalogue';
 import { inspectArchive } from './importer';
 import { looksLikeZip } from './zip';
-import { warsawDateKey } from '../time/warsaw';
+import { formatDateKey, warsawDateKey } from '../time/warsaw';
+
+/** `…/hdb/download/146/` → `файл 146`, for the log. */
+const short = (url: string) => {
+  const id = /\/(\d+)\/?$/.exec(url)?.[1];
+  return id ? `файл ${id}` : url.replace(/^https?:\/\//, '');
+};
 
 /** What earlier checks learned about a snapshot URL, so it is not downloaded again for nothing. */
 export type KnownSnapshot = { window: FeedWindow | null } | { invalid: string };
@@ -64,14 +70,14 @@ export const decideUpdate = async ({
     try {
       bytes = await download(candidate.url);
     } catch (error) {
-      log(`download failed ${candidate.url}: ${(error as Error).message}`);
+      log(`${short(candidate.url)}: не скачался (${(error as Error).message})`);
       continue;
     }
 
     // An HTML error page or a truncated transfer says nothing about the
     // snapshot itself, so it is retried next time rather than remembered.
     if (!looksLikeZip(bytes)) {
-      log(`${candidate.url} did not return a zip archive (${bytes.length} bytes)`);
+      log(`${short(candidate.url)}: пришёл не zip-архив (${bytes.length} байт), попробую позже`);
       continue;
     }
 
@@ -80,7 +86,7 @@ export const decideUpdate = async ({
       window = inspectArchive(bytes).window;
     } catch (error) {
       const reason = (error as Error).message;
-      log(`rejected ${candidate.url}: ${reason}`);
+      log(`${short(candidate.url)}: отклонён — ${reason}`);
       known[candidate.url] = { invalid: reason };
       continue;
     }
@@ -89,7 +95,11 @@ export const decideUpdate = async ({
     if (isInForce(window, now)) {
       return { action: 'import', candidate, bytes, window, known, reason: 'snapshot in force' };
     }
-    log(`${candidate.url} is valid from ${window?.start} to ${window?.end}, not today`);
+    log(
+      window
+        ? `${short(candidate.url)}: действует с ${formatDateKey(window.start)} по ${formatDateKey(window.end)}, не сегодня`
+        : `${short(candidate.url)}: даты не указаны`,
+    );
     fallback ??= { action: 'import', candidate, bytes, window, known, reason: 'no snapshot in force; using nearest valid one' };
   }
 

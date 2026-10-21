@@ -46,6 +46,8 @@ export type SourceStatus = {
   okAt: number | null;
   /** What the last answer contained and why rows were dropped, when the source can say. */
   detail: SourceDetail | null;
+  /** After a failure: when the source will be asked again, epoch ms. */
+  retryAt: number | null;
 };
 
 export type SourceDetail = {
@@ -55,4 +57,4 @@ export type SourceDetail = {
   medianAgeSeconds?: number | null;
 };
 
-export const emptyStatus = (): SourceStatus => ({ ok: false, count: 0, error: null, at: null, okAt: null, detail: null });
+export const emptyStatus = (): SourceStatus => ({ ok: false, count: 0, error: null, at: null, okAt: null, detail: null, retryAt: null });

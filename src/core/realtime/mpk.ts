@@ -102,13 +102,26 @@ export const fetchMpk = async (
   const errors: string[] = [];
   for (const encoding of order) {
     try {
-      const payload = await request(MPK_URL, (response) => response.json() as Promise<unknown>, {
-        method: 'POST',
-        timeoutMs,
-        fetchImpl,
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8', Accept: 'application/json' },
-        body: buildBody(encoding, lines),
-      });
+      const payload = await request(
+        MPK_URL,
+        async (response) => {
+          const text = await response.text();
+          // A cut-off or empty answer is a server-side failure; say so plainly.
+          if (!text.trim()) throw new Error(`empty body (HTTP ${response.status})`);
+          try {
+            return JSON.parse(text) as unknown;
+          } catch {
+            throw new Error(`not JSON (HTTP ${response.status}): ${text.slice(0, 40).replace(/\s+/g, ' ')}`);
+          }
+        },
+        {
+          method: 'POST',
+          timeoutMs,
+          fetchImpl,
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8', Accept: 'application/json' },
+          body: buildBody(encoding, lines),
+        },
+      );
       const rows = Array.isArray(payload)
         ? payload
         : ((payload as Record<string, unknown> | null)?.vehicles ?? (payload as Record<string, unknown> | null)?.data);
@@ -125,5 +138,7 @@ export const fetchMpk = async (
       errors.push(`${encoding}: ${(error as Error).message}`);
     }
   }
-  throw new Error(errors.join('; '));
+  // Both encodings failing the same way is one problem, not two.
+  const messages = [...new Set(errors.map((error) => error.replace(/^(typed|flat): /, '')))];
+  throw new Error(messages.length === 1 ? messages[0] : errors.join('; '));
 };

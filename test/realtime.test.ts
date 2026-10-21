@@ -78,7 +78,15 @@ describe('MPK bus_position', () => {
 
   test('both encodings failing is an error, not an empty map', async () => {
     const fetchImpl = jest.fn(async () => new Response('[]'));
-    await expect(fetchMpk({ trams: ['4'], buses: [] }, { fetchImpl, now: NOW, isTram })).rejects.toThrow(/typed: empty list; flat: empty list/);
+    // The same failure from both encodings is reported once.
+    await expect(fetchMpk({ trams: ['4'], buses: [] }, { fetchImpl, now: NOW, isTram })).rejects.toThrow(/^empty list$/);
+  });
+
+  test('an empty or cut-off body says so, with the HTTP status', async () => {
+    const empty = jest.fn(async () => new Response(''));
+    await expect(fetchMpk({ trams: ['4'], buses: [] }, { fetchImpl: empty, now: NOW, isTram })).rejects.toThrow(/^empty body \(HTTP 200\)$/);
+    const cut = jest.fn(async () => new Response('[{"x":51.1,"y":17'));
+    await expect(fetchMpk({ trams: ['4'], buses: [] }, { fetchImpl: cut, now: NOW, isTram })).rejects.toThrow(/^not JSON \(HTTP 200\)/);
   });
 });
 
@@ -259,6 +267,44 @@ describe('tracker', () => {
     expect((await tracker.poll()).vehicles).toHaveLength(1);
     now += 40_000;
     expect((await tracker.poll()).vehicles).toHaveLength(0);
+  });
+
+  test('a failing source pauses 30 s, then 60 s; Open Data is asked once a minute', async () => {
+    let now = NOW;
+    const calls = { mpk: 0, od: 0 };
+    const fetchImpl = jest.fn(async (url: string) => {
+      if (url.includes('bus_position')) {
+        calls.mpk += 1;
+        return new Response('');
+      }
+      if (url.includes('hdb/db/14')) {
+        calls.od += 1;
+        return new Response(JSON.stringify({ dane: [] }));
+      }
+      return new Response(encodeFeed({ header: { gtfsRealtimeVersion: '2.0' }, entity: [] }).slice().buffer);
+    });
+    const tracker = new LiveTracker({ lines, isTram, resolver, fetchImpl, now: () => now });
+
+    let snapshot = await tracker.poll();
+    // Both encodings were tried once each, and failed.
+    expect(calls.mpk).toBe(2);
+    expect(snapshot.status.mpk).toMatchObject({ ok: false, error: 'empty body (HTTP 200)', retryAt: NOW + 30_000 });
+
+    // 10 s later: MPK is paused, Open Data is not due yet.
+    now += 10_000;
+    await tracker.poll();
+    expect(calls).toEqual({ mpk: 2, od: 1 });
+
+    // 30 s after the failure MPK is asked again; it fails, so the pause doubles.
+    now = NOW + 30_000;
+    snapshot = await tracker.poll();
+    expect(calls.mpk).toBe(4);
+    expect(snapshot.status.mpk.retryAt).toBe(NOW + 90_000);
+
+    // A minute after the first call Open Data is asked again.
+    now = NOW + 60_000;
+    await tracker.poll();
+    expect(calls.od).toBe(2);
   });
 
   test('a Kłosok bus replaces the same-line Wrocław record next to it', async () => {
