@@ -6,6 +6,7 @@ import { getStopNamesByCode } from '../../core/gtfs/map-queries';
 import { getDepartures, getStopPosts, type Departure, type StopPost } from '../../core/gtfs/queries';
 import { isTramLine } from '../../core/lines';
 import type { ImpkDeparture } from '../../core/realtime/impk';
+import { delayMinutesLabel, delayStatus } from '../../core/realtime/trip-match';
 import { formatClock } from '../../core/time/warsaw';
 import { buildActiveOn, liveDelaysForStop, type StopLive } from '../../platform/describe';
 import { useFavorites } from '../../state/favorites';
@@ -14,7 +15,8 @@ import { useLive } from '../../state/live';
 import { useReminders } from '../../state/reminders';
 import { useTimetable } from '../../state/timetable';
 import { LineBadge } from '../../ui/line-badge';
-import { useTheme } from '../../ui/theme';
+import { ScheduleTime } from '../../ui/schedule-time';
+import { delayTextColor, useTheme } from '../../ui/theme';
 import { useNow } from '../../ui/use-now';
 
 const REFRESH_MS = 30_000;
@@ -45,9 +47,8 @@ type Row = {
 };
 
 const delayLabel = (seconds: number) => {
-  const minutes = Math.round(seconds / 60);
-  if (minutes === 0) return 'вовремя';
-  return minutes > 0 ? `+${minutes} мин` : `${minutes} мин`;
+  const minutes = delayMinutesLabel(seconds);
+  return minutes === '0' ? 'вовремя' : `${minutes} мин`;
 };
 
 export default function StopScreen() {
@@ -301,7 +302,6 @@ export default function StopScreen() {
         }
         renderItem={({ item }) => {
           const soon = item.at - now < 15 * 60_000;
-          const late = item.delaySeconds !== null && item.delaySeconds >= 120;
           return (
             <Pressable
               onPress={() => onRowPress(item)}
@@ -313,14 +313,13 @@ export default function StopScreen() {
                   {item.headsign ?? '—'}
                 </Text>
                 <Text style={[styles.post, { color: theme.muted }]} numberOfLines={1}>
-                  {[
-                    posts.length > 1 && selectedPost === null ? `słupek ${item.stopCode ?? ''}` : null,
-                    item.isLive && item.at !== item.scheduledAt
-                      ? `${formatClock(item.at)} (по расписанию ${formatClock(item.scheduledAt)})`
-                      : formatClock(item.scheduledAt),
-                  ]
-                    .filter(Boolean)
-                    .join(' · ')}
+                  {posts.length > 1 && selectedPost === null ? `słupek ${item.stopCode ?? ''} · ` : ''}
+                  <ScheduleTime
+                    scheduledAt={item.scheduledAt}
+                    expectedAt={item.isLive ? item.at : null}
+                    delaySeconds={item.delaySeconds}
+                    style={styles.post}
+                  />
                 </Text>
               </View>
               <View style={styles.right}>
@@ -330,7 +329,9 @@ export default function StopScreen() {
                   <Text style={[styles.time, { color: soon ? theme.amber : theme.text }]}>{countdown(item.at, now)}</Text>
                 </View>
                 {item.delaySeconds !== null ? (
-                  <Text style={[styles.delay, { color: late ? theme.danger : theme.muted }]}>{delayLabel(item.delaySeconds)}</Text>
+                  <Text style={[styles.delay, { color: delayTextColor(theme, delayStatus(item.delaySeconds)) }]}>
+                    {delayLabel(item.delaySeconds)}
+                  </Text>
                 ) : null}
               </View>
             </Pressable>

@@ -7,8 +7,9 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { getStopsInBBox, getVariants, getVariantStops, type MapStop } from '../core/gtfs/map-queries';
 import { inBBox, type BBox } from '../core/geo';
+import { lineVisibility } from '../core/line-groups';
 import { matchVariant, stopsAlong, type Variant } from '../core/realtime/route-match';
-import { delayStatus, type RunDescription } from '../core/realtime/trip-match';
+import { delayMinutesLabel, delayStatus, type RunDescription } from '../core/realtime/trip-match';
 import type { LiveVehicle } from '../core/realtime/types';
 import { spreadPoints, type Offset } from '../core/spread';
 import { buildActiveOn, describeVehicle } from '../platform/describe';
@@ -28,7 +29,7 @@ import { useNow } from '../ui/use-now';
 import { mapHeading as mapHeadingValue, MOVE_MS, VehicleMarker } from '../ui/vehicle-marker';
 
 const WROCLAW: Region = { latitude: 51.1079, longitude: 17.0385, latitudeDelta: 0.09, longitudeDelta: 0.09 };
-/** Beyond this many drops in view (with no line filter) the map asks to zoom in. */
+/** Beyond this many drops in view the map asks to zoom in (or to choose fewer lines). */
 const MAX_MARKERS = 220;
 /** Dots are light: zoomed out, the whole city's fleet (~550 with iMPK) is drawn. */
 const MAX_DOTS = 900;
@@ -61,7 +62,8 @@ export default function MapScreen() {
   const vehicles = useLive((state) => state.vehicles);
   const at = useLive((state) => state.at);
   const status = useLive((state) => state.status);
-  const filter = useLive((state) => state.filter);
+  const hidden = useLive((state) => state.hidden);
+  const lines = useLive((state) => state.lines);
   const favorites = useFavorites((state) => state.stops);
   const showDelays = useLive((state) => state.showDelays);
   const notices = useAlerts((state) => state.notices);
@@ -135,14 +137,14 @@ export default function MapScreen() {
       .catch(() => {});
   }, []);
 
-  const filterSet = useMemo(() => new Set(filter), [filter]);
+  const visibility = useMemo(() => lineVisibility(lines, hidden), [lines, hidden]);
   const box = useMemo(() => regionBox(region), [region]);
   const inView = useMemo(
-    () => vehicles.filter((v) => (filterSet.size === 0 || filterSet.has(v.line)) && inBBox(box, v.lat, v.lon)),
-    [vehicles, filterSet, box],
+    () => vehicles.filter((v) => visibility.isShown(v.line, v.tram) && inBBox(box, v.lat, v.lon)),
+    [vehicles, visibility, box],
   );
   const dots = region.latitudeDelta > DOTS_DELTA;
-  const tooMany = filterSet.size === 0 && inView.length > (dots ? MAX_DOTS : MAX_MARKERS);
+  const tooMany = inView.length > (dots ? MAX_DOTS : MAX_MARKERS);
   const selected = vehicles.find((v) => v.id === selectedId) ?? null;
   const shown: LiveVehicle[] = useMemo(
     () => (tooMany ? (selected ? [selected] : []) : inView),
@@ -439,6 +441,7 @@ export default function MapScreen() {
         {shown.map((vehicle) => {
           const isSelected = vehicle.id === selectedId;
           const offset = offsets.get(vehicle.id) ?? NO_OFFSET;
+          const delaySeconds = showDelays ? (delays.get(vehicle.id) ?? vehicle.delaySeconds) : null;
           return (
             <VehicleMarker
               key={vehicle.id}
@@ -451,7 +454,8 @@ export default function MapScreen() {
               selected={isSelected}
               // The selected vehicle keeps its number even when zoomed out.
               look={dots && !isSelected ? 'dot' : 'drop'}
-              delay={showDelays ? delayStatus(delays.get(vehicle.id) ?? vehicle.delaySeconds) : null}
+              delay={showDelays ? delayStatus(delaySeconds) : null}
+              delayText={delaySeconds !== null ? delayMinutesLabel(delaySeconds) : null}
               offsetX={offset.dx}
               offsetY={offset.dy}
               onSelect={setSelectedId}
@@ -488,11 +492,11 @@ export default function MapScreen() {
           </Pressable>
           <Pressable
             onPress={() => open('/lines')}
-            style={[styles.button, styles.icon, { backgroundColor: filter.length ? theme.accent : theme.surface }]}
-            accessibilityLabel={filter.length ? `Линии, выбрано: ${filter.length}` : 'Линии'}
+            style={[styles.button, styles.icon, { backgroundColor: !visibility.all ? theme.accent : theme.surface }]}
+            accessibilityLabel={!visibility.all ? `Линии, показано: ${visibility.shownLines.length}` : 'Линии'}
           >
-            <LinesIcon color={filter.length ? '#FFFFFF' : theme.text} />
-            {filter.length ? <Badge count={filter.length} color="#1F2937" /> : null}
+            <LinesIcon color={!visibility.all ? '#FFFFFF' : theme.text} />
+            {!visibility.all ? <Badge count={visibility.shownLines.length} color="#1F2937" /> : null}
           </Pressable>
           <Pressable
             onPress={() => open('/settings')}

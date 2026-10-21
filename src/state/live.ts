@@ -12,17 +12,23 @@ import { impkClient } from './impk';
 import { useTimetable } from './timetable';
 
 const POLL_MS = 10_000;
-const FILTER_KEY = 'live.lineFilter';
+/** Before hidden lines: the lines shown, empty meaning all. Read once, to carry a choice over. */
+const OLD_FILTER_KEY = 'live.lineFilter';
+const HIDDEN_KEY = 'live.hiddenLines';
 const DELAYS_KEY = 'live.showDelays';
 
-const readFilter = (): string[] => {
+const readList = (key: string): string[] | null => {
   try {
-    const raw = Storage.getItemSync(FILTER_KEY);
-    return raw ? (JSON.parse(raw) as string[]) : [];
+    const raw = Storage.getItemSync(key);
+    return raw ? (JSON.parse(raw) as string[]) : null;
   } catch {
-    return [];
+    return null;
   }
 };
+
+const savedHidden = readList(HIDDEN_KEY);
+/** An old "only these lines" choice, turned into hidden lines once the line list is known. */
+const oldFilter = savedHidden === null ? (readList(OLD_FILTER_KEY) ?? []) : [];
 
 const readDelays = (): boolean => {
   try {
@@ -39,14 +45,14 @@ type LiveState = {
   /** MPK and Open Data against iMPK, one entry per iMPK answer, oldest first. */
   comparisons: ComparisonEntry[];
   lines: LineInfo[];
-  /** Lines shown on the map; empty means all. */
-  filter: string[];
+  /** Lines not shown on the map; a group with all its lines hidden is hidden whole. */
+  hidden: string[];
   polling: boolean;
   /** The delay layer: markers ringed by how late their run is. */
   showDelays: boolean;
   setShowDelays: (on: boolean) => void;
   toggleLine: (line: string) => void;
-  setFilter: (lines: string[]) => void;
+  setHidden: (lines: string[]) => void;
 };
 
 export const useLive = create<LiveState>((set, get) => ({
@@ -55,7 +61,7 @@ export const useLive = create<LiveState>((set, get) => ({
   status: null,
   comparisons: [],
   lines: [],
-  filter: readFilter(),
+  hidden: savedHidden ?? [],
   polling: false,
   showDelays: readDelays(),
   setShowDelays: (showDelays) => {
@@ -67,15 +73,16 @@ export const useLive = create<LiveState>((set, get) => ({
     }
   },
   toggleLine: (line) => {
-    const current = get().filter;
-    get().setFilter(current.includes(line) ? current.filter((l) => l !== line) : [...current, line]);
+    const current = get().hidden;
+    get().setHidden(current.includes(line) ? current.filter((l) => l !== line) : [...current, line]);
   },
-  setFilter: (filter) => {
-    set({ filter });
+  setHidden: (hidden) => {
+    set({ hidden });
     try {
-      Storage.setItemSync(FILTER_KEY, JSON.stringify(filter));
+      Storage.setItemSync(HIDDEN_KEY, JSON.stringify(hidden));
+      Storage.removeItemSync(OLD_FILTER_KEY);
     } catch {
-      // The filter just will not survive a restart.
+      // The choice just will not survive a restart.
     }
   },
 }));
@@ -92,6 +99,11 @@ const trackerFor = (db: Db) => {
     clearDescribeCache();
     const lines = getLines(db).then((list) => {
       useLive.setState({ lines: list });
+      if (oldFilter.length && useLive.getState().hidden.length === 0) {
+        const shown = new Set(oldFilter);
+        useLive.getState().setHidden(list.filter((line) => !shown.has(line.name)).map((line) => line.name));
+        oldFilter.length = 0;
+      }
       return list;
     });
     const tramLines = lines.then((list) => new Set(list.filter((line) => line.tram).map((line) => line.name)));

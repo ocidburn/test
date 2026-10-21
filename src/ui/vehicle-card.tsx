@@ -1,11 +1,12 @@
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
-import type { RunDescription, UpcomingStop } from '../core/realtime/trip-match';
+import { delayStatus, type RunDescription, type UpcomingStop } from '../core/realtime/trip-match';
 import type { LiveVehicle } from '../core/realtime/types';
 import { formatClock } from '../core/time/warsaw';
 import { LineBadge } from './line-badge';
 import { Sheet } from './sheet';
-import { lineColor, useTheme } from './theme';
+import { ScheduleTime } from './schedule-time';
+import { delayTextColor, lineColor, useTheme } from './theme';
 
 const SOURCES: Record<LiveVehicle['source'], string> = {
   impk: 'iMPK',
@@ -138,9 +139,10 @@ export function VehicleSheet({
               {next.name}
             </Text>
             <Text style={[styles.sub, { color: theme.muted }]} numberOfLines={1}>
-              {[delaySeconds !== null ? delayText(delaySeconds) : 'рейс не определён', remaining ? stopsWord(remaining) : null]
-                .filter(Boolean)
-                .join(' · ')}
+              <Text style={delaySeconds !== null ? { color: delayTextColor(theme, delayStatus(delaySeconds)), fontWeight: '600' } : null}>
+                {delaySeconds !== null ? delayText(delaySeconds) : 'рейс не определён'}
+              </Text>
+              {remaining ? ` · ${stopsWord(remaining)}` : ''}
             </Text>
           </View>
           {next.stop ? <Eta seconds={next.stop.etaSeconds} now={now} big color={theme.amber} /> : null}
@@ -171,7 +173,13 @@ export function VehicleSheet({
                       {item.name}
                     </Text>
                     {item.stop?.scheduledAt ? (
-                      <Text style={[styles.sub, { color: theme.muted }]}>по расписанию {formatClock(item.stop.scheduledAt)}</Text>
+                      <ScheduleTime
+                        scheduledAt={item.stop.scheduledAt}
+                        expectedAt={delaySeconds !== null ? item.stop.scheduledAt + delaySeconds * 1000 : null}
+                        delaySeconds={delaySeconds}
+                        prefix="по расписанию"
+                        style={styles.sub}
+                      />
                     ) : null}
                   </View>
                   {item.stop ? <Eta seconds={item.stop.etaSeconds} now={now} color={theme.amber} /> : null}

@@ -6,7 +6,7 @@ import { OfflineCard } from '../ui/offline-card';
 import { useTheme } from '../ui/theme';
 import { DELAY_COLORS } from '../ui/vehicle-marker';
 
-/** What the map draws: its base layer, the delay rings, and offline tiles. */
+/** What the map draws: its base layer, the delay badges, and offline tiles. */
 export default function LayersScreen() {
   const theme = useTheme();
   const showDelays = useLive((state) => state.showDelays);
@@ -22,14 +22,15 @@ export default function LayersScreen() {
         </View>
         {showDelays ? (
           <View style={styles.legend}>
-            <Legend color={DELAY_COLORS.ok} label="до 2 мин" muted={theme.muted} />
-            <Legend color={DELAY_COLORS.mid} label="2–5 мин" muted={theme.muted} />
-            <Legend color={DELAY_COLORS.late} label="больше 5" muted={theme.muted} />
-            <Legend color={DELAY_COLORS.none} label="нет данных" muted={theme.muted} />
+            <Legend color={DELAY_COLORS.ok} label="вовремя" muted={theme.muted} dot />
+            <Legend color={DELAY_COLORS.mid} label="+2…5 мин" text="+3" dark muted={theme.muted} />
+            <Legend color={DELAY_COLORS.late} label="больше 5" text="+8" muted={theme.muted} />
+            <Legend color={DELAY_COLORS.early} label="раньше" text="−2" muted={theme.muted} />
           </View>
         ) : null}
         <Text style={{ color: theme.muted, fontSize: 13 }}>
-          Кольцо вокруг машины. Серое — рейс не определён, опоздание не угадывается.
+          Минуты у значка машины, только когда она идёт не по расписанию; зелёная точка — вовремя. Без отметки —
+          рейс не найден, опоздание не угадывается. При отдалении точки красятся по опозданию (серые — без рейса).
         </Text>
       </View>
       <OfflineCard />
@@ -37,9 +38,29 @@ export default function LayersScreen() {
   );
 }
 
-const Legend = ({ color, label, muted }: { color: string; label: string; muted: string }) => (
+const Legend = ({
+  color,
+  label,
+  muted,
+  text,
+  dark,
+  dot,
+}: {
+  color: string;
+  label: string;
+  muted: string;
+  text?: string;
+  dark?: boolean;
+  dot?: boolean;
+}) => (
   <View style={styles.legendItem}>
-    <View style={[styles.legendRing, { borderColor: color }]} />
+    {dot ? (
+      <View style={[styles.legendDot, { backgroundColor: color }]} />
+    ) : (
+      <View style={[styles.legendBadge, { backgroundColor: color }]}>
+        <Text style={{ color: dark ? '#1F2937' : '#FFFFFF', fontSize: 11, fontWeight: '800' }}>{text}</Text>
+      </View>
+    )}
     <Text style={{ color: muted, fontSize: 13 }}>{label}</Text>
   </View>
 );
@@ -50,5 +71,6 @@ const styles = StyleSheet.create({
   layerRow: { flexDirection: 'row', alignItems: 'center' },
   legend: { flexDirection: 'row', flexWrap: 'wrap', columnGap: 16, rowGap: 6 },
   legendItem: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  legendRing: { width: 14, height: 14, borderRadius: 7, borderWidth: 3 },
+  legendDot: { width: 11, height: 11, borderRadius: 5.5 },
+  legendBadge: { minWidth: 24, height: 18, paddingHorizontal: 5, borderRadius: 9, alignItems: 'center', justifyContent: 'center' },
 });

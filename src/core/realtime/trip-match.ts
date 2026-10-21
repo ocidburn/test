@@ -192,12 +192,23 @@ export const describeRun = (
   };
 };
 
-/** Ring colour class for a delay: on time (< 2 min late), 2–5 min, over 5 min, or unknown. */
-export type DelayStatus = 'ok' | 'mid' | 'late' | 'none';
+/**
+ * How a run stands against its timetable: a minute or more early, on time (under 2 min late),
+ * 2–5 min late, more than 5, or unknown (no run found). Early is its own class: a rider can
+ * miss a vehicle that leaves before its time, so it must not look like "on time".
+ */
+export type DelayStatus = 'early' | 'ok' | 'mid' | 'late' | 'none';
 
 export const delayStatus = (seconds: number | null | undefined): DelayStatus => {
   if (seconds === null || seconds === undefined || !Number.isFinite(seconds)) return 'none';
+  if (seconds <= -60) return 'early';
   if (seconds < 120) return 'ok';
   if (seconds <= 300) return 'mid';
   return 'late';
+};
+
+/** "+4", "−2" (a real minus sign), or "0": whole minutes, as the badges and boards show them. */
+export const delayMinutesLabel = (seconds: number): string => {
+  const minutes = Math.round(seconds / 60);
+  return minutes > 0 ? `+${minutes}` : minutes < 0 ? `−${-minutes}` : '0';
 };

@@ -7,8 +7,8 @@ import { distanceMeters } from '../core/geo';
 import type { DelayStatus } from '../core/realtime/trip-match';
 import { lineColor } from './theme';
 
-/** Room for the drop's point (27 from the centre) at any angle, and the delay ring. */
-const BOX = 60;
+/** Room for the drop's point (27 from the centre) at any angle, and the delay badge at its corner. */
+const BOX = 80;
 const DOT_BOX = 44;
 /** Each of a dot's three trail segments; the trail is 18 long. */
 const TRAIL_STEP = 6;
@@ -26,13 +26,16 @@ export const mapHeading = new Animated.Value(0);
 /** Further than this between two polls is a GPS jump or a source switch: no glide. */
 const TELEPORT_METERS = 1000;
 
-/** Ring colours of the delay layer; grey when the run, and so the delay, is not known. */
+/** Colours of the delay layer: badges, the on-time dot, and dots when zoomed out. Grey when the run is not known. */
 export const DELAY_COLORS: Record<DelayStatus, string> = {
+  early: '#2563EB',
   ok: '#16A34A',
   mid: '#F59E0B',
   late: '#DC2626',
   none: '#9CA3AF',
 };
+/** Badge text: dark on amber, which white would not clear. */
+const BADGE_TEXT: Record<DelayStatus, string> = { early: '#FFFFFF', ok: '#FFFFFF', mid: '#1F2937', late: '#FFFFFF', none: '#FFFFFF' };
 
 // The animated marker's typings drop `children`; it renders them like a plain Marker.
 const AnimatedMarker = MarkerAnimated as unknown as ComponentType<MapMarkerProps>;
@@ -53,8 +56,11 @@ export type MarkerStyle = 'drop' | 'dot';
  * `dot`: for a zoomed-out map, a small dot with a trail fading out behind it,
  * in plain views so the whole fleet can be drawn.
  *
- * With the delay layer on, a ring (drop) or the rim (dot) shows how late the
- * run is, grey when that is not known. The marker glides to each new
+ * With the delay layer on, a drop carries a badge with the minutes ("+4",
+ * "−2") when its run is off schedule, a small green dot when it is on time,
+ * and nothing when no run was found: the number reads without telling colours
+ * apart. A dot takes the delay's colour, so a zoomed-out map shows where
+ * traffic is stuck. The marker glides to each new
  * position; `offset` (screen points) only moves where it is drawn, to keep
  * it clear of its neighbours.
  */
@@ -68,6 +74,7 @@ export const VehicleMarker = memo(function VehicleMarker({
   selected,
   look,
   delay,
+  delayText,
   offsetX,
   offsetY,
   onSelect,
@@ -80,8 +87,10 @@ export const VehicleMarker = memo(function VehicleMarker({
   heading: number | null;
   selected: boolean;
   look: MarkerStyle;
-  /** The delay layer's ring; null while the layer is off. */
+  /** The delay layer's class; null while the layer is off. */
   delay: DelayStatus | null;
+  /** The badge's minutes ("+4", "−2"), for early, mid and late. */
+  delayText: string | null;
   offsetX: number;
   offsetY: number;
   onSelect: (id: string) => void;
@@ -152,7 +161,7 @@ export const VehicleMarker = memo(function VehicleMarker({
       {look === 'dot' ? (
         <Dot color={color} delay={delay} selected={selected} rotate={heading !== null ? rotate : null} />
       ) : (
-        <Drop line={line} color={color} delay={delay} selected={selected} rotate={heading !== null ? rotate : null} />
+        <Drop line={line} color={color} delay={delay} delayText={delayText} selected={selected} rotate={heading !== null ? rotate : null} />
       )}
     </AnimatedMarker>
   );
@@ -168,12 +177,14 @@ const Drop = ({
   line,
   color,
   delay,
+  delayText,
   selected,
   rotate,
 }: {
   line: string;
   color: string;
   delay: DelayStatus | null;
+  delayText: string | null;
   selected: boolean;
   rotate: Rotation;
 }) => {
@@ -181,12 +192,6 @@ const Drop = ({
   const rimWidth = selected ? 3 : 2;
   return (
     <View style={styles.box} pointerEvents="none">
-      {delay !== null ? (
-        <Svg width={BOX} height={BOX} viewBox={`${-HALF} ${-HALF} ${BOX} ${BOX}`} style={StyleSheet.absoluteFill}>
-          <Circle r={20} fill="none" stroke="#FFFFFF" strokeWidth={6} />
-          <Circle r={20} fill="none" stroke={DELAY_COLORS[delay]} strokeWidth={3.5} />
-        </Svg>
-      ) : null}
       {rotate ? (
         // The whole silhouette turns with the heading; the number below does not.
         <Animated.View style={[StyleSheet.absoluteFill, { transform: [{ rotate }] }]}>
@@ -205,6 +210,15 @@ const Drop = ({
           {line}
         </Text>
       </View>
+      {/* Upright at the top-right corner, whichever way the drop points; above the drop. */}
+      {delay === 'ok' ? <View style={[styles.onTime, { backgroundColor: DELAY_COLORS.ok }]} /> : null}
+      {(delay === 'early' || delay === 'mid' || delay === 'late') && delayText ? (
+        <View style={[styles.badge, { backgroundColor: DELAY_COLORS[delay] }]}>
+          <Text style={[styles.badgeText, { color: BADGE_TEXT[delay] }]} numberOfLines={1}>
+            {delayText}
+          </Text>
+        </View>
+      ) : null}
     </View>
   );
 };
@@ -222,24 +236,23 @@ const Dot = ({
   delay: DelayStatus | null;
   selected: boolean;
   rotate: Rotation;
-}) => (
-  <View style={styles.dotBox} pointerEvents="none">
-    {rotate ? (
-      // Drawn pointing south (behind a vehicle heading north), turned to the heading.
-      <Animated.View style={[StyleSheet.absoluteFill, { transform: [{ rotate }] }]}>
-        {TRAIL_STEPS.map((opacity, step) => (
-          <View key={step} style={[styles.trail, { top: DOT_BOX / 2 + 3 + step * TRAIL_STEP, opacity, backgroundColor: color }]} />
-        ))}
-      </Animated.View>
-    ) : null}
-    <View
-      style={[
-        styles.dot,
-        { backgroundColor: color, borderColor: selected ? SELECTED_RIM : delay !== null ? DELAY_COLORS[delay] : '#FFFFFF' },
-      ]}
-    />
-  </View>
-);
+}) => {
+  // With the delay layer on, the dot is the delay's colour instead of the line's.
+  const fill = delay !== null ? DELAY_COLORS[delay] : color;
+  return (
+    <View style={styles.dotBox} pointerEvents="none">
+      {rotate ? (
+        // Drawn pointing south (behind a vehicle heading north), turned to the heading.
+        <Animated.View style={[StyleSheet.absoluteFill, { transform: [{ rotate }] }]}>
+          {TRAIL_STEPS.map((opacity, step) => (
+            <View key={step} style={[styles.trail, { top: DOT_BOX / 2 + 3 + step * TRAIL_STEP, opacity, backgroundColor: fill }]} />
+          ))}
+        </Animated.View>
+      ) : null}
+      <View style={[styles.dot, { backgroundColor: fill, borderColor: selected ? SELECTED_RIM : '#FFFFFF' }]} />
+    </View>
+  );
+};
 
 const styles = StyleSheet.create({
   box: { width: BOX, height: BOX },
@@ -248,5 +261,29 @@ const styles = StyleSheet.create({
   smallText: { fontSize: 10.5 },
   dotBox: { width: DOT_BOX, height: DOT_BOX, alignItems: 'center', justifyContent: 'center' },
   dot: { width: 12, height: 12, borderRadius: 6, borderWidth: 2 },
+  onTime: {
+    position: 'absolute',
+    left: HALF + 9,
+    top: HALF - 19,
+    width: 11,
+    height: 11,
+    borderRadius: 5.5,
+    borderWidth: 2,
+    borderColor: '#FFFFFF',
+  },
+  badge: {
+    position: 'absolute',
+    left: HALF + 4,
+    top: HALF - 25,
+    minWidth: 24,
+    height: 18,
+    paddingHorizontal: 5,
+    borderRadius: 9,
+    borderWidth: 1.5,
+    borderColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  badgeText: { fontSize: 11, fontWeight: '800', fontVariant: ['tabular-nums'] },
   trail: { position: 'absolute', left: DOT_BOX / 2 - 2.5, width: 5, height: TRAIL_STEP + 1, borderRadius: 2.5 },
 });

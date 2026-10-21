@@ -1,5 +1,7 @@
 import { useColorScheme } from 'react-native';
 
+import type { DelayStatus } from '../core/realtime/trip-match';
+
 const light = {
   background: '#F4F5F7',
   surface: '#FFFFFF',
@@ -11,6 +13,9 @@ const light = {
   amber: '#B45309',
   danger: '#B42318',
   inputBackground: '#EDEFF2',
+  /** Delay text: on time, a minute or more early (riders can miss it: never shown as on time). */
+  onTime: '#15803D',
+  early: '#1D4ED8',
 };
 
 const dark: typeof light = {
@@ -23,11 +28,17 @@ const dark: typeof light = {
   amber: '#F59E0B',
   danger: '#F97066',
   inputBackground: '#20242B',
+  onTime: '#4ADE80',
+  early: '#7AB4FF',
 };
 
 export type Theme = typeof light;
 
 export const useTheme = (): Theme => (useColorScheme() === 'dark' ? dark : light);
+
+/** The text colour for a delay class (boards, the vehicle sheet); unknown is muted. */
+export const delayTextColor = (theme: Theme, status: DelayStatus): string =>
+  ({ early: theme.early, ok: theme.onTime, mid: theme.amber, late: theme.danger, none: theme.muted })[status];
 
 /** Badge colours; each clears 4.5:1 against white text. */
 export const lineColor = (line: string, tram: boolean): string => {

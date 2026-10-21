@@ -3,6 +3,7 @@ import { ActivityIndicator, Linking, Pressable, RefreshControl, ScrollView, Styl
 
 import { noticeState, type Notice } from '../core/alerts/mpk-notices';
 import { formatClock, splitDateKey, warsawDateKey } from '../core/time/warsaw';
+import { lineVisibility } from '../core/line-groups';
 import { currentNotices, useAlerts } from '../state/alerts';
 import { useFavorites } from '../state/favorites';
 import { useLive } from '../state/live';
@@ -38,7 +39,7 @@ export default function AlertsScreen() {
   const [seenAtOpen] = useState(() => new Set(useAlerts.getState().seen));
   const refresh = useAlerts((state) => state.refresh);
   const markSeen = useAlerts((state) => state.markSeen);
-  const filter = useLive((state) => state.filter);
+  const hidden = useLive((state) => state.hidden);
   const lines = useLive((state) => state.lines);
   const [mine, setMine] = useState(false);
   const [open, setOpen] = useState<string | null>(null);
@@ -52,7 +53,11 @@ export default function AlertsScreen() {
   const today = warsawDateKey(nowMs);
   const trams = useMemo(() => new Set(lines.filter((l) => l.tram).map((l) => l.name)), [lines]);
   const isTram = (line: string) => (trams.size ? trams.has(line) : /^\d{1,2}$/.test(line));
-  const filterSet = useMemo(() => new Set(filter), [filter]);
+  // With some lines hidden, "my lines" are the ones the map shows.
+  const filterSet = useMemo(
+    () => (hidden.length ? new Set(lineVisibility(lines, hidden).shownLines) : new Set<string>()),
+    [lines, hidden],
+  );
   const shown = useMemo(() => {
     const list = currentNotices(notices, nowMs);
     return mine && filterSet.size ? list.filter((n) => n.lines.some((line) => filterSet.has(line))) : list;
@@ -93,11 +98,11 @@ export default function AlertsScreen() {
           <Text style={{ color: theme.accent, fontSize: 15, fontWeight: '600' }}>Открыть @AlertMPK в X</Text>
         </Pressable>
       </View>
-      {filter.length ? (
+      {filterSet.size ? (
         <View style={styles.tabs}>
           {[
             { on: !mine, label: 'Все', press: () => setMine(false) },
-            { on: mine, label: `Линии на карте · ${filter.length}`, press: () => setMine(true) },
+            { on: mine, label: `Линии на карте · ${filterSet.size}`, press: () => setMine(true) },
           ].map((tab) => (
             <Pressable
               key={tab.label}
