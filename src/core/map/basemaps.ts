@@ -146,7 +146,8 @@ export const BASEMAPS: Basemap[] = [
   // Wrocław's SIP portal (ArcGIS Enterprise): cached tiles in Web Mercator, the standard scheme, so
   // {z}/{y}/{x} directly; levels to 21; 404 outside the city, where Apple's map shows through.
   // Orthophoto 2024 (GUGiK's, 5 cm, the same image as the HD layer here, but cached: fast), street names
-  // drawn in; its licence: no restrictions.
+  // drawn in; geoportal.wroclaw.pl/zasoby: "brak ograniczeń". (The 2025 flight is for viewing in SIP's own
+  // apps only, so it is not here.)
   {
     id: 'wroclaw-orto-2024',
     name: 'Ортофото 2024 с улицами',
@@ -154,13 +155,16 @@ export const BASEMAPS: Basemap[] = [
     kind: 'xyz',
     url: 'https://gis.um.wroc.pl/portal_srv/rest/services/Ortofotomapa_2024/MapServer/tile/{z}/{y}/{x}',
     maxZoom: 21,
-    attribution: 'Ortofotomapa 2024 (GUGiK), SIP Wrocław, geoportal.wroclaw.pl',
+    attribution: 'Ortofotomapa 2024 (GUGiK); źródło: System Informacji Przestrzennej Wrocławia, www.geoportal.wroclaw.pl',
     cacheSeconds: 30 * 86_400,
     under: 'satellite',
     replace: false,
     offline: true,
   },
-  // The city's own base maps; their terms (geoportal.wroclaw.pl) are not read yet, so no offline download.
+  // The city's base map ("Podkładowa mapa Wrocławia" / Mapa podstawowa: addresses, streets, railways,
+  // buildings, greenery, water, land cover), drawn grey or in colour; geoportal.wroclaw.pl/zasoby lists its
+  // terms as "brak ograniczeń" (no restrictions), so offline download is allowed. The city asks for its
+  // source to be named as below.
   {
     id: 'wroclaw-grey',
     name: 'Серая карта города',
@@ -168,10 +172,11 @@ export const BASEMAPS: Basemap[] = [
     kind: 'xyz',
     url: 'https://gis.um.wroc.pl/portal_srv/rest/services/podklad_szary_odniesienie/MapServer/tile/{z}/{y}/{x}',
     maxZoom: 21,
-    attribution: 'Mapy SIP Wrocławia, geoportal.wroclaw.pl',
+    attribution: 'Źródło: System Informacji Przestrzennej Wrocławia, www.geoportal.wroclaw.pl',
     cacheSeconds: 30 * 86_400,
     under: 'mutedStandard',
     replace: false,
+    offline: true,
   },
   {
     id: 'wroclaw-colour',
@@ -180,10 +185,11 @@ export const BASEMAPS: Basemap[] = [
     kind: 'xyz',
     url: 'https://gis.um.wroc.pl/portal_srv/rest/services/podklad_mocny_odniesienie/MapServer/tile/{z}/{y}/{x}',
     maxZoom: 21,
-    attribution: 'Mapy SIP Wrocławia, geoportal.wroclaw.pl',
+    attribution: 'Źródło: System Informacji Przestrzennej Wrocławia, www.geoportal.wroclaw.pl',
     cacheSeconds: 30 * 86_400,
     under: 'mutedStandard',
     replace: false,
+    offline: true,
   },
   { id: 'google-roadmap', name: 'Карта', group: 'google', kind: 'google', mapType: 'roadmap', hybrid: false },
   { id: 'google-satellite', name: 'Спутник', group: 'google', kind: 'google', mapType: 'satellite', hybrid: false },

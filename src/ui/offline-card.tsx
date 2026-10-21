@@ -39,8 +39,8 @@ export function OfflineCard() {
   if (!canGoOffline(basemap)) {
     return (
       <Text style={[styles.note, { color: theme.muted }]}>
-        Офлайн-загрузка есть только у подложек, чьи условия её разрешают: ортофото Польши HD и ортофото Вроцлава 2024. OSM, Thunderforest,
-        CARTO, Stadia и Google запрещают массовую загрузку или требуют платный тариф; условия городских карт SIP ещё не прочитаны.
+        Офлайн-загрузка есть только у подложек, чьи условия её разрешают: ортофото Польши HD и слои Вроцлава (SIP). OSM, Thunderforest,
+        CARTO, Stadia и Google запрещают массовую загрузку или требуют платный тариф.
       </Text>
     );
   }
