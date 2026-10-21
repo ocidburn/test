@@ -27,6 +27,20 @@ describe('iMPK getPositions', () => {
     expect(detail).toEqual({ total: 4, rejected: {}, medianAgeSeconds: 4 });
   });
 
+  test('reads the spelled-out keys too (no shortcut=true)', () => {
+    const body = JSON.stringify([
+      '2026-10-21 14:28:20',
+      { code: 4105, course: 29086632, x: 17.118454, y: 51.109913, line: '715', type: 'BUS', symbol: '44704', direction: '24317', delay: 34000 },
+      { code: 3101, course: 29254933, x: 17.048319, y: 51.085026, line: '18', type: 'TRAM', symbol: '21011', direction: '21037', delay: -60000 },
+    ]);
+    const { vehicles, destinations } = parseImpkPositions(body, { now: SERVER_AT + 3_600_000, isTram: (line, hint) => hint === 'tram' });
+    expect(vehicles.map((v) => [v.id, v.line, v.tram, v.delaySeconds])).toEqual([
+      ['impk:4105', '715', false, 34],
+      ['impk:3101', '18', true, -60],
+    ]);
+    expect(destinations.get('impk:3101')).toBe('21037');
+  });
+
   test('a server clock ahead of the phone does not date fixes in the future', () => {
     const { vehicles } = parseImpkPositions(SAMPLE, { now: SERVER_AT - 60_000, isTram });
     expect(vehicles[0].positionAt).toBe(SERVER_AT - 60_000);

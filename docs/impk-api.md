@@ -37,6 +37,12 @@ object per vehicle (~480 at midday):
 | `s`, `d` | post symbols; `d` repeats per line, so it is read as the terminus |
 | `e` | delay in ms; taken as positive = late (not yet checked against the official app) |
 
+Without `shortcut=true` the same answer spells the keys out (seen 2026-10-21): `code` (= `v`),
+`course` (= `c`), `x`, `y`, `line` (= `l`), `type` `"BUS"`/`"TRAM"` (= `t`), `symbol` (= `s`, the current
+post), `direction` (= `d`), `delay` (= `e`). That confirms the short keys' meaning. Some `direction`
+values are not 5-digit post symbols (e.g. `"50000057"` on line 100). Extra parameters such as
+`symbol=…` are ignored by `getPositions`.
+
 Other names in the APK without a confirmed URL (`getPosts`, `getPostsLines`, `getLines`,
 `getVehicles`, `getVehiclesInfo`, `getCourse`, …) may be client methods, not operations.
 The APK also carries TrustKit, i.e. the official app pins the server's certificate: a normal,

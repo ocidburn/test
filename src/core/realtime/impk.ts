@@ -66,14 +66,17 @@ export const probeImpk = async (
 
 /**
  * `getPositions` answers a JSON list: the server's wall-clock time first
- * ("2026-10-21 13:40:50", Wrocław time), then one object per vehicle:
+ * ("2026-10-21 13:40:50", Wrocław time), then one object per vehicle. With
+ * `shortcut=true` the keys are one letter; without it they are spelled out:
  *
  *   { v: 4102, c: 29086669, x: 17.091331, y: 51.11346, l: "715", t: "b",
  *     s: "24313", d: "24708", e: 289000 }
+ *   { code: 4102, course: 29086671, x: 17.090508, y: 51.113888, line: "715",
+ *     type: "BUS", symbol: "24317", direction: "24708", delay: 0 }
  *
- * Read from a real answer: v side number, c course (run) id, x/y lon/lat,
- * l line, t "t" tram / "b" bus, s and d post symbols (d repeats per line:
- * the terminus), e delay in milliseconds — taken as positive = late.
+ * Both read from real answers: side number, course (run) id, lon/lat, line,
+ * tram/bus, the current post symbol, the direction (terminus post symbol)
+ * and the delay in milliseconds — taken as positive = late.
  */
 export type ImpkPositions = {
   vehicles: LiveVehicle[];
@@ -83,6 +86,9 @@ export type ImpkPositions = {
 };
 
 type Raw = Record<string, unknown>;
+
+/** The short key, or its spelled-out twin. */
+const field = (raw: Raw, short: string, long: string) => (raw[short] !== undefined ? raw[short] : raw[long]);
 
 const str = (value: unknown) => (typeof value === 'string' ? value.trim() : typeof value === 'number' ? String(value) : '');
 
@@ -114,12 +120,12 @@ export const parseImpkPositions = (
       continue;
     }
     const raw = item as Raw;
-    const line = str(raw.l).toUpperCase();
+    const line = str(field(raw, 'l', 'line')).toUpperCase();
     if (!line) {
       reject('line');
       continue;
     }
-    const number = str(raw.v);
+    const number = str(field(raw, 'v', 'code'));
     if (!number) {
       reject('number');
       continue;
@@ -130,14 +136,16 @@ export const parseImpkPositions = (
       reject('position');
       continue;
     }
-    const delay = typeof raw.e === 'number' && Number.isFinite(raw.e) ? Math.round(raw.e / 1000) : null;
+    const delayMs = field(raw, 'e', 'delay');
+    const delay = typeof delayMs === 'number' && Number.isFinite(delayMs) ? Math.round(delayMs / 1000) : null;
     const id = `impk:${number}`;
-    const destination = str(raw.d);
+    const destination = str(field(raw, 'd', 'direction'));
+    const type = str(field(raw, 't', 'type')).toLowerCase();
     if (destination) destinations.set(id, destination);
     vehicles.push({
       id,
       line,
-      tram: isTram(line, raw.t === 't' ? 'tram' : raw.t === 'b' ? 'bus' : null),
+      tram: isTram(line, type === 't' || type === 'tram' ? 'tram' : type === 'b' || type === 'bus' ? 'bus' : null),
       lat,
       lon,
       heading: null,
