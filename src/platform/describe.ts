@@ -63,11 +63,13 @@ export const describeVehicle = async (
   vehicle: Pick<LiveVehicle, 'line' | 'lat' | 'lon' | 'heading' | 'positionAt'>,
   now: number,
   activeOn: ActiveOn,
+  /** How many stops ahead to time; the selected vehicle's sheet wants all of them. */
+  { limit }: { limit?: number } = {},
 ): Promise<VehicleDescription | null> => {
   const match = matchVariant(await variantsOf(db, vehicle.line), vehicle);
   if (!match) return null;
   const profile = await profileOf(db, match.variant, vehicle.line);
-  const run = profile ? describeRun(profile, match.projection.along, now, activeOn, { positionAt: vehicle.positionAt }) : null;
+  const run = profile ? describeRun(profile, match.projection.along, now, activeOn, { positionAt: vehicle.positionAt, limit }) : null;
   return { variant: match.variant, along: match.projection.along, run };
 };
 

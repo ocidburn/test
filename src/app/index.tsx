@@ -1,13 +1,13 @@
 import * as Location from 'expo-location';
 import { Stack, useFocusEffect } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AppState, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { AppState, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import MapView, { Marker, Polyline, type Region } from 'react-native-maps';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { getStopsInBBox, getVariants, getVariantStops, type MapStop } from '../core/gtfs/map-queries';
 import { inBBox, type BBox } from '../core/geo';
-import { matchVariant, nextStop, stopsAlong, type Variant } from '../core/realtime/route-match';
+import { matchVariant, stopsAlong, type Variant } from '../core/realtime/route-match';
 import { delayStatus, type RunDescription } from '../core/realtime/trip-match';
 import type { LiveVehicle } from '../core/realtime/types';
 import { spreadPoints, type Offset } from '../core/spread';
@@ -23,7 +23,7 @@ import { useOpenOnce } from '../ui/use-open-once';
 import { BasemapAttribution, BasemapTiles, useBasemapLayer } from '../ui/basemap-layer';
 import { StatusBanner } from '../ui/status-banner';
 import { lineColor, useTheme } from '../ui/theme';
-import { VehicleCard } from '../ui/vehicle-card';
+import { VehicleSheet } from '../ui/vehicle-card';
 import { useNow } from '../ui/use-now';
 import { mapHeading as mapHeadingValue, MOVE_MS, VehicleMarker } from '../ui/vehicle-marker';
 
@@ -259,6 +259,8 @@ export default function MapScreen() {
         { line: selectedLine, lat: selectedLat, lon: selectedLon, heading: selectedHeading, positionAt: selectedPositionAt },
         Date.now(),
         activeOn,
+        // Every stop to the end of the run, for the sheet's list.
+        { limit: 200 },
       );
       if (!cancelled) setRun({ id: describeKey, run: description?.run ?? null });
     })().catch(() => {});
@@ -301,7 +303,38 @@ export default function MapScreen() {
     if (!shownRoute || !selected) return null;
     return matchVariant([shownRoute.variant], selected)?.projection.along ?? null;
   }, [shownRoute, selected]);
-  const upcoming = shownRoute && along !== null ? nextStop(shownRoute.stops, along) : null;
+  // Where the vehicle is on its route, and the stops ahead by geometry (for when no run matches).
+  const position = useMemo(() => {
+    if (!shownRoute || along === null) return null;
+    const atStop = shownRoute.stops.find((stop) => Math.abs(stop.along - along) <= 40);
+    const passed = shownRoute.stops.filter((stop) => stop.along < along).at(-1);
+    const ahead = shownRoute.stops.filter((stop) => stop.along > along + 15);
+    return {
+      where: atStop ? `на остановке ${atStop.name}` : passed ? `проехал ${passed.name}` : `едет к ${ahead[0]?.name ?? 'конечной'}`,
+      ahead,
+    };
+  }, [shownRoute, along]);
+
+  // The selected vehicle's sheet opens at half the screen; the map's middle moves up to the half left over.
+  const window = useWindowDimensions();
+  const sheetHalf = Math.round(window.height * 0.5);
+  const sheetFull = window.height - insets.top - 12;
+  const padBottom = selected ? sheetHalf : 0;
+
+  // A vehicle tapped low on the map would end up under the sheet: the map brings it into the free half.
+  const sheetTop = window.height - sheetHalf;
+  useEffect(() => {
+    if (!selectedId || selectedLat === undefined || selectedLon === undefined) return;
+    const coordinate = { latitude: selectedLat, longitude: selectedLon };
+    mapRef.current
+      ?.pointForCoordinate(coordinate)
+      .then((point) => {
+        if (point.y > sheetTop - 40) mapRef.current?.animateCamera({ center: coordinate }, { duration: 350 });
+      })
+      .catch(() => {});
+    // Once per selection, not with every new position.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedId]);
 
 
   const locate = async () => {
@@ -334,11 +367,14 @@ export default function MapScreen() {
         onRegionChange={(next, details) => {
           readHeading();
           // Dragging the map away from the followed vehicle ends following; turning it does not.
-          if (details?.isGesture && following && selected) {
-            const away =
-              Math.abs(next.latitude - selected.lat) > next.latitudeDelta * 0.15 ||
-              Math.abs(next.longitude - selected.lon) > next.longitudeDelta * 0.15;
-            if (away) setFollowId(null);
+          if (details?.isGesture && following && selected && mapSize.height) {
+            // Its screen position (turned with the map) against the middle of the part the sheet leaves free.
+            const rad = (heading * Math.PI) / 180;
+            const x = ((selected.lon - next.longitude) / next.longitudeDelta) * mapSize.width;
+            const y = ((next.latitude - selected.lat) / next.latitudeDelta) * mapSize.height;
+            const dx = x * Math.cos(rad) + y * Math.sin(rad);
+            const dy = -x * Math.sin(rad) + y * Math.cos(rad) + padBottom / 2;
+            if (Math.hypot(dx, dy) > Math.min(mapSize.width, mapSize.height - padBottom) * 0.2) setFollowId(null);
           }
         }}
         onRegionChangeComplete={(next) => {
@@ -359,6 +395,7 @@ export default function MapScreen() {
         // Our own north button (below) stands in for Apple's compass, which would sit under the top buttons.
         showsCompass={false}
         mapType={basemap.mapType}
+        mapPadding={{ top: 0, left: 0, right: 0, bottom: padBottom }}
         toolbarEnabled={false}
       >
         <BasemapTiles tile={basemap.tile} />
@@ -499,8 +536,8 @@ export default function MapScreen() {
         </View>
       </View>
 
-      <BasemapAttribution layer={basemap} bottom={insets.bottom + 26} />
-      <View style={[styles.bottom, { paddingBottom: insets.bottom + 12 }]} pointerEvents="box-none">
+      <BasemapAttribution layer={basemap} bottom={selected ? sheetHalf + 8 : insets.bottom + 26} />
+      <View style={[styles.bottom, { paddingBottom: selected ? sheetHalf + 12 : insets.bottom + 12 }]} pointerEvents="box-none">
         {Math.min(heading, 360 - heading) > 1 ? (
           <Pressable
             onPress={() => mapRef.current?.animateCamera({ heading: 0 }, { duration: 400 })}
@@ -517,20 +554,24 @@ export default function MapScreen() {
         <Pressable onPress={locate} style={[styles.round, { backgroundColor: theme.surface }]} accessibilityLabel="Где я">
           <Text style={{ color: theme.accent, fontSize: 20 }}>➤</Text>
         </Pressable>
-        {selected ? (
-          <VehicleCard
-            vehicle={selected}
-            headsign={selected.headsign ?? selectedRun?.headsign ?? shownRoute?.variant.headsign ?? null}
-            nextStop={selectedRun?.nextStop?.name ?? upcoming?.name ?? null}
-            nextStopEtaSeconds={selectedRun?.nextStop?.etaSeconds ?? null}
-            delaySeconds={selected.delaySeconds ?? selectedRun?.delaySeconds ?? null}
-            now={now}
-            following={following}
-            onToggleFollow={() => setFollowId(following ? null : selectedId)}
-            onClose={() => setSelectedId(null)}
-          />
-        ) : null}
       </View>
+      {selected ? (
+        <VehicleSheet
+          vehicle={selected}
+          headsign={selected.headsign ?? selectedRun?.headsign ?? shownRoute?.variant.headsign ?? null}
+          where={position?.where ?? null}
+          run={selectedRun}
+          routeStops={position?.ahead ?? []}
+          delaySeconds={selected.delaySeconds ?? selectedRun?.delaySeconds ?? null}
+          now={now}
+          following={following}
+          half={sheetHalf}
+          full={sheetFull}
+          onToggleFollow={() => setFollowId(following ? null : selectedId)}
+          onClose={() => setSelectedId(null)}
+          onStop={(name) => open({ pathname: '/stop/[name]', params: { name } })}
+        />
+      ) : null}
     </View>
   );
 }
