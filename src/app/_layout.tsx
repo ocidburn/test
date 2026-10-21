@@ -38,6 +38,8 @@ export default function RootLayout() {
         <Stack.Screen name="search" options={{ title: 'Остановки' }} />
         <Stack.Screen name="stop/[name]" options={{ title: '' }} />
         <Stack.Screen name="lines" options={{ title: 'Линии на карте', presentation: 'modal' }} />
+        <Stack.Screen name="layers" options={{ title: 'Слои карты', presentation: 'modal' }} />
+        <Stack.Screen name="alerts" options={{ title: 'Изменения в движении', presentation: 'modal' }} />
         <Stack.Screen name="settings" options={{ title: 'Данные', presentation: 'modal' }} />
       </Stack>
     </>

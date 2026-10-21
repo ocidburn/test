@@ -6,7 +6,7 @@ import { useTheme } from './theme';
 
 const GROUPS = Object.keys(GROUP_NAMES) as BasemapGroup[];
 
-/** Base layer choice on the Lines screen; layers whose key is missing say where to add it. */
+/** Base layer choice on the map-layers screen; layers whose key is missing say where to add it. */
 export function BasemapPicker() {
   const theme = useTheme();
   const selected = useBasemap((state) => state.selected);

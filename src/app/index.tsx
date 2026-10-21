@@ -1,5 +1,5 @@
 import * as Location from 'expo-location';
-import { router, Stack, useFocusEffect } from 'expo-router';
+import { Stack, useFocusEffect } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AppState, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import MapView, { Marker, Polyline, type Region } from 'react-native-maps';
@@ -17,6 +17,9 @@ import { startLive, stopLive, useLive } from '../state/live';
 import { useMapView } from '../state/map-view';
 import { useTimetable } from '../state/timetable';
 import { isThreeD } from '../core/map/basemaps';
+import { currentNotices, useAlerts } from '../state/alerts';
+import { AlertIcon, GearIcon, LayersIcon, LinesIcon } from '../ui/icons';
+import { useOpenOnce } from '../ui/use-open-once';
 import { BasemapAttribution, BasemapTiles, useBasemapLayer } from '../ui/basemap-layer';
 import { StatusBanner } from '../ui/status-banner';
 import { lineColor, useTheme } from '../ui/theme';
@@ -61,6 +64,10 @@ export default function MapScreen() {
   const filter = useLive((state) => state.filter);
   const favorites = useFavorites((state) => state.stops);
   const showDelays = useLive((state) => state.showDelays);
+  const notices = useAlerts((state) => state.notices);
+  const seen = useAlerts((state) => state.seen);
+  const refreshAlerts = useAlerts((state) => state.refresh);
+  const open = useOpenOnce();
 
   const [region, setRegion] = useState<Region>(WROCLAW);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -95,14 +102,28 @@ export default function MapScreen() {
   // Poll only while the map is on screen and the app is in the foreground.
   useFocusEffect(
     useCallback(() => {
-      if (AppState.currentState === 'active') startLive();
-      const subscription = AppState.addEventListener('change', (next) => (next === 'active' ? startLive() : stopLive()));
+      if (AppState.currentState === 'active') {
+        startLive();
+        void refreshAlerts();
+      }
+      const subscription = AppState.addEventListener('change', (next) => {
+        if (next !== 'active') return stopLive();
+        startLive();
+        // Itself skips the network unless half an hour has passed.
+        void refreshAlerts();
+      });
       return () => {
         subscription.remove();
         stopLive();
       };
-    }, []),
+    }, [refreshAlerts]),
   );
+
+  // Notices in force or coming that have not been looked at yet.
+  const unseenNotices = useMemo(() => {
+    const looked = new Set(seen);
+    return currentNotices(notices, now).filter((n) => !looked.has(n.id)).length;
+  }, [notices, seen, now]);
 
   // A new timetable means new shapes.
   useEffect(() => variantsCache.current.clear(), [db]);
@@ -356,7 +377,7 @@ export default function MapScreen() {
                 anchor={{ x: 0.5, y: 0.5 }}
                 onPress={(event) => {
                   event.stopPropagation();
-                  router.push({ pathname: '/stop/[name]', params: { name: stop.name } });
+                  open({ pathname: '/stop/[name]', params: { name: stop.name } });
                 }}
               >
                 <View style={[styles.routeStop, { borderColor: lineColor(selected?.line ?? '', selected?.tram ?? false) }]} />
@@ -371,7 +392,7 @@ export default function MapScreen() {
                 anchor={{ x: 0.5, y: 0.5 }}
                 onPress={(event) => {
                   event.stopPropagation();
-                  router.push({ pathname: '/stop/[name]', params: { name: stop.name } });
+                  open({ pathname: '/stop/[name]', params: { name: stop.name } });
                 }}
               >
                 <View style={styles.stop} />
@@ -406,25 +427,42 @@ export default function MapScreen() {
         <View style={styles.buttons} pointerEvents="box-none">
           {/* Plain Pressables: a Link with asChild dropped the pill backgrounds on iOS. */}
           <Pressable
-            onPress={() => router.push('/search')}
+            onPress={() => open('/search')}
             style={[styles.button, styles.searchButton, { backgroundColor: theme.surface }]}
           >
-            <Text style={{ color: theme.muted, fontSize: 16 }}>Поиск остановки</Text>
-          </Pressable>
-          <Pressable
-            onPress={() => router.push('/lines')}
-            style={[styles.button, { backgroundColor: filter.length ? theme.accent : theme.surface }]}
-          >
-            <Text style={{ color: filter.length ? '#FFFFFF' : theme.text, fontWeight: '600' }}>
-              {filter.length ? `Линии · ${filter.length}` : 'Линии'}
+            <Text style={{ color: theme.muted, fontSize: 16 }} numberOfLines={1}>
+              Поиск остановки
             </Text>
           </Pressable>
           <Pressable
-            onPress={() => router.push('/settings')}
-            style={[styles.button, { backgroundColor: theme.surface }]}
+            onPress={() => open('/alerts')}
+            style={[styles.button, styles.icon, { backgroundColor: theme.surface }]}
+            accessibilityLabel={unseenNotices ? `Изменения в движении, новых: ${unseenNotices}` : 'Изменения в движении'}
+          >
+            <AlertIcon color={unseenNotices ? theme.amber : theme.text} />
+            {unseenNotices ? <Badge count={unseenNotices} color={theme.danger} /> : null}
+          </Pressable>
+          <Pressable
+            onPress={() => open('/layers')}
+            style={[styles.button, styles.icon, { backgroundColor: theme.surface }]}
+            accessibilityLabel="Слои карты"
+          >
+            <LayersIcon color={theme.text} />
+          </Pressable>
+          <Pressable
+            onPress={() => open('/lines')}
+            style={[styles.button, styles.icon, { backgroundColor: filter.length ? theme.accent : theme.surface }]}
+            accessibilityLabel={filter.length ? `Линии, выбрано: ${filter.length}` : 'Линии'}
+          >
+            <LinesIcon color={filter.length ? '#FFFFFF' : theme.text} />
+            {filter.length ? <Badge count={filter.length} color="#1F2937" /> : null}
+          </Pressable>
+          <Pressable
+            onPress={() => open('/settings')}
+            style={[styles.button, styles.icon, { backgroundColor: theme.surface }]}
             accessibilityLabel="Данные"
           >
-            <Text style={{ color: theme.text, fontSize: 18, fontWeight: '700' }}>⋯</Text>
+            <GearIcon color={theme.text} />
           </Pressable>
         </View>
         {favorites.length ? (
@@ -438,7 +476,7 @@ export default function MapScreen() {
             {favorites.map((stop) => (
               <Pressable
                 key={stop}
-                onPress={() => router.push({ pathname: '/stop/[name]', params: { name: stop } })}
+                onPress={() => open({ pathname: '/stop/[name]', params: { name: stop } })}
                 style={[styles.favorite, { backgroundColor: theme.surface }]}
               >
                 <Text style={{ color: theme.text, fontWeight: '600' }} numberOfLines={1}>
@@ -497,12 +535,19 @@ export default function MapScreen() {
   );
 }
 
+/** A count in the corner of a round button. */
+const Badge = ({ count, color }: { count: number; color: string }) => (
+  <View style={[styles.badge, { backgroundColor: color }]} pointerEvents="none">
+    <Text style={styles.badgeText}>{count > 99 ? '99+' : count}</Text>
+  </View>
+);
+
 const SOURCE_NAMES: Record<string, string> = { impk: 'iMPK', mpk: 'MPK', openData: 'Open Data', klosok: 'Kłosok' };
 
 const styles = StyleSheet.create({
   screen: { flex: 1 },
   top: { position: 'absolute', left: 0, right: 0, top: 0, gap: 8 },
-  buttons: { flexDirection: 'row', gap: 8, paddingHorizontal: 12 },
+  buttons: { flexDirection: 'row', gap: 6, paddingHorizontal: 12 },
   button: {
     height: 44,
     minWidth: 44,
@@ -516,6 +561,21 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 2 },
   },
   searchButton: { flex: 1, alignItems: 'flex-start' },
+  icon: { width: 44, paddingHorizontal: 0 },
+  badge: {
+    position: 'absolute',
+    top: -4,
+    right: -4,
+    minWidth: 20,
+    height: 20,
+    paddingHorizontal: 5,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1.5,
+    borderColor: '#FFFFFF',
+  },
+  badgeText: { color: '#FFFFFF', fontSize: 11, fontWeight: '700' },
   favoritesBar: { flexGrow: 0 },
   favorites: { paddingHorizontal: 12, paddingVertical: 4, gap: 8 },
   favorite: {
