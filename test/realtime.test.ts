@@ -244,7 +244,8 @@ describe('tracker', () => {
     let snapshot = await tracker.poll();
     expect(snapshot.vehicles).toHaveLength(1);
     expect(snapshot.vehicles[0].heading).toBeNull();
-    expect(snapshot.status.openData).toMatchObject({ ok: false, error: 'portal down' });
+    // MPK answers, so Open Data, the fallback, is not asked.
+    expect(snapshot.status.openData).toMatchObject({ ok: false, idle: 'standby' });
     expect(snapshot.status.mpk).toMatchObject({ ok: true, count: 1 });
 
     // Moves ~110 m north-east.

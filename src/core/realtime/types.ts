@@ -50,8 +50,8 @@ export type SourceStatus = {
   detail: SourceDetail | null;
   /** After a failure: when the source will be asked again, epoch ms. */
   retryAt: number | null;
-  /** Not asked: switched off. */
-  idle: 'off' | null;
+  /** Not asked: switched off, or a fallback not needed while the main feeds answer. */
+  idle: 'off' | 'standby' | null;
 };
 
 export type SourceDetail = {

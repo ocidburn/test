@@ -123,11 +123,13 @@ export default function SettingsScreen() {
           const value =
             source?.idle === 'off'
               ? 'выключен'
-              : !source?.at
-                ? 'ещё не опрашивался'
-                : source.ok
-                  ? `${source.count} · ${formatInstant(source.okAt)}`
-                  : `ошибка: ${humanError(source.error ?? '?')}${retryIn(source.retryAt, now)}`;
+              : source?.idle === 'standby'
+                ? 'запасной: опрашивается, когда iMPK и MPK молчат'
+                : !source?.at
+                  ? 'ещё не опрашивался'
+                  : source.ok
+                    ? `${source.count} · ${formatInstant(source.okAt)}`
+                    : `ошибка: ${humanError(source.error ?? '?')}${retryIn(source.retryAt, now)}`;
           return (
             <View key={key} style={[styles.liveRow, { borderColor: theme.border }]}>
               <View style={styles.liveLine}>

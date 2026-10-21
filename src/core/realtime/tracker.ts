@@ -25,8 +25,16 @@ const SCHEDULE: Record<SourceName, { everyMs: number; staleMs: number }> = {
   klosok: { everyMs: 0, staleMs: 90_000 },
 };
 
-/** Comparison log: one entry per poll while iMPK answers, an hour of them at 10 s. */
+/** Comparison log: one entry per round that brought a new iMPK answer and a new answer to compare. */
 const COMPARISON_LOG = 360;
+/** A source that succeeded this recently counts as answering. */
+const ANSWERING_MS = 30_000;
+/**
+ * While iMPK answers, MPK is asked once a minute: its positions are the same
+ * (seen in the comparison log), so it is kept only to compare and as the
+ * fallback, which goes back to every poll the moment iMPK stops answering.
+ */
+const MPK_BESIDE_IMPK_MS = 60_000;
 
 /** A failing source waits 30 s, then 60, 120 … up to 5 min before it is asked again. */
 const BACKOFF_BASE_MS = 30_000;
@@ -80,12 +88,12 @@ export class LiveTracker {
     klosok: null,
   };
   private encoding: Encoding | null = null;
-  /** Per source: consecutive failures, and the earliest time to ask again. */
-  private readonly pace: Record<SourceName, { failures: number; nextAt: number }> = {
-    impk: { failures: 0, nextAt: 0 },
-    mpk: { failures: 0, nextAt: 0 },
-    openData: { failures: 0, nextAt: 0 },
-    klosok: { failures: 0, nextAt: 0 },
+  /** Per source: consecutive failures, the pause they impose, and the last attempt. */
+  private readonly pace: Record<SourceName, Pace> = {
+    impk: newPace(),
+    mpk: newPace(),
+    openData: newPace(),
+    klosok: newPace(),
   };
   private readonly history = new Map<string, { lat: number; lon: number; heading: number | null; seen: number }>();
   /** For vehicles that have not moved yet: the heading of the route they are on (iMPK names the destination). */
@@ -97,40 +105,50 @@ export class LiveTracker {
     this.now = deps.now ?? Date.now;
   }
 
-  private async run(name: SourceName, task: () => Promise<{ vehicles: LiveVehicle[]; detail?: SourceDetail }>) {
+  /** Ask a source if it is due: its interval since the last attempt, and any pause after failures. */
+  private async run(
+    name: SourceName,
+    task: () => Promise<{ vehicles: LiveVehicle[]; detail?: SourceDetail }>,
+    everyMs = SCHEDULE[name].everyMs,
+  ) {
     const at = this.now();
     const pace = this.pace[name];
     this.status[name].idle = null;
-    // Not due yet (its interval, or a pause after failures): keep the last answer.
-    if (at < pace.nextAt) return;
+    // Not due yet: keep the last answer.
+    if (at < pace.retryAt || (pace.lastAt !== null && at - pace.lastAt < everyMs)) return;
     const status = this.status[name];
     status.at = at;
+    pace.lastAt = at;
     try {
       const { vehicles, detail = null } = await task();
       this.last[name] = { vehicles, at };
       pace.failures = 0;
-      pace.nextAt = at + SCHEDULE[name].everyMs;
+      pace.retryAt = 0;
       Object.assign(status, { ok: true, count: vehicles.length, error: null, okAt: at, detail, retryAt: null });
     } catch (error) {
       pace.failures += 1;
-      pace.nextAt = at + Math.min(BACKOFF_BASE_MS * 2 ** (pace.failures - 1), BACKOFF_MAX_MS);
-      Object.assign(status, { ok: false, error: (error as Error).message, retryAt: pace.nextAt });
+      pace.retryAt = at + Math.min(BACKOFF_BASE_MS * 2 ** (pace.failures - 1), BACKOFF_MAX_MS);
+      Object.assign(status, { ok: false, error: (error as Error).message, retryAt: pace.retryAt });
     }
   }
 
-  /** Not asked: switched off, which also takes its vehicles off the map. */
-  private idle(name: SourceName, reason: 'off') {
+  /** Not asked: switched off (its vehicles leave the map), or a fallback not needed now. */
+  private idle(name: SourceName, reason: 'off' | 'standby') {
     this.status[name].idle = reason;
     if (reason === 'off') {
       this.last[name] = null;
       Object.assign(this.status[name], { ok: false, count: 0, error: null, retryAt: null });
-      this.pace[name] = { failures: 0, nextAt: 0 };
+      this.pace[name] = newPace();
     }
   }
 
-  private impkAnswered(now: number, withinMs: number) {
-    const last = this.last.impk;
+  private answered(name: SourceName, now: number, withinMs: number) {
+    const last = this.last[name];
     return last !== null && now - last.at <= withinMs;
+  }
+
+  private impkAnswered(now: number, withinMs: number) {
+    return this.answered('impk', now, withinMs);
   }
 
   /** Route headings for the vehicles whose own movement has not given one yet. */
@@ -159,9 +177,10 @@ export class LiveTracker {
       this.idle('impk', 'off');
       this.comparisons = [];
     }
-    // MPK and Open Data are still asked while iMPK answers: the map shows iMPK,
-    // and the other two are compared with it in the log.
-    const before = this.last.impk?.at;
+    // While iMPK answers the map shows it; MPK is still asked, once a minute, to
+    // compare and to stand by. Open Data only fills in when neither answers.
+    const before = { impk: this.last.impk?.at, mpk: this.last.mpk?.at, openData: this.last.openData?.at };
+    const impkUp = impk !== null && this.impkAnswered(this.now(), ANSWERING_MS);
     await Promise.all([
       impk &&
         this.run('impk', async () => {
@@ -176,26 +195,45 @@ export class LiveTracker {
           });
           return { vehicles, detail: parsed.detail };
         }),
-      this.run('mpk', async () => {
+      this.run(
+        'mpk',
+        async () => {
           const lines = await this.deps.lines();
           const result = await fetchMpk(lines, { preferred: this.encoding, fetchImpl, now: this.now(), isTram: (line, hint) => isTram(line, hint) });
           this.encoding = result.encoding;
           return { vehicles: result.vehicles };
-        }),
-      this.run('openData', async () => {
-          const { vehicles, ...detail } = await fetchOpenData({ fetchImpl, now: this.now(), isTram: (line) => isTram(line) });
-          return { vehicles, detail };
-        }),
+        },
+        impkUp ? MPK_BESIDE_IMPK_MS : SCHEDULE.mpk.everyMs,
+      ),
       this.run('klosok', async () => ({ vehicles: await fetchKlosok(resolver, { fetchImpl, now: this.now() }) })),
     ]);
-    // A comparison for each new iMPK answer.
+
+    // Open Data, the fallback: positions minutes old or none at all (comparison log),
+    // so it is asked only when neither iMPK nor MPK has answered lately.
+    const now = this.now();
+    if (this.answered('impk', now, ANSWERING_MS) || this.answered('mpk', now, ANSWERING_MS)) {
+      this.idle('openData', 'standby');
+    } else {
+      await this.run('openData', async () => {
+        const { vehicles, ...detail } = await fetchOpenData({ fetchImpl, now: this.now(), isTram: (line) => isTram(line) });
+        return { vehicles, detail };
+      });
+    }
+
+    // Compare each new iMPK answer with what the others newly brought this round,
+    // never with an older answer: that would read as the source lagging.
     const impkLast = this.last.impk;
-    if (impkLast && impkLast.at !== before) {
-      const now = this.now();
-      const mpk = this.status.mpk.ok ? this.fresh('mpk', SCHEDULE.mpk.staleMs, now) : null;
-      const openData = this.last.openData && now - this.last.openData.at <= SCHEDULE.openData.staleMs ? this.last.openData.vehicles : null;
-      this.comparisons.push(compareSources(impkLast.at, impkLast.vehicles, mpk, openData));
-      if (this.comparisons.length > COMPARISON_LOG) this.comparisons.splice(0, this.comparisons.length - COMPARISON_LOG);
+    const newer = (name: 'mpk' | 'openData') => {
+      const last = this.last[name];
+      return last && last.at !== before[name] ? last.vehicles : null;
+    };
+    if (impkLast && impkLast.at !== before.impk) {
+      const mpk = newer('mpk');
+      const openData = newer('openData');
+      if (mpk || openData) {
+        this.comparisons.push(compareSources(impkLast.at, impkLast.vehicles, mpk, openData));
+        if (this.comparisons.length > COMPARISON_LOG) this.comparisons.splice(0, this.comparisons.length - COMPARISON_LOG);
+      }
     }
     return this.combine();
   }
@@ -248,6 +286,9 @@ export class LiveTracker {
     return heading === vehicle.heading ? vehicle : { ...vehicle, heading };
   }
 }
+
+type Pace = { failures: number; retryAt: number; lastAt: number | null };
+const newPace = (): Pace => ({ failures: 0, retryAt: 0, lastAt: null });
 
 const structuredCloneStatus = (status: Record<SourceName, SourceStatus>): Record<SourceName, SourceStatus> => ({
   impk: { ...status.impk },

@@ -136,9 +136,13 @@ describe('tracker with iMPK', () => {
     let now = SERVER_AT + 2_000;
     const calls: string[] = [];
     let impkBody: string | Error = SAMPLE;
+    let mpkDown = false;
     const fetchImpl = jest.fn(async (url: string) => {
       calls.push(url.includes('bus_position') ? 'mpk' : url.includes('hdb') ? 'od' : 'klosok');
-      if (url.includes('bus_position')) return new Response(JSON.stringify([{ x: 51.1, y: 17.03, name: '4', k: 9 }]));
+      if (url.includes('bus_position')) {
+        if (mpkDown) throw new Error('mpk down');
+        return new Response(JSON.stringify([{ x: 51.1, y: 17.03, name: '4', k: 9 }]));
+      }
       if (url.includes('hdb')) return new Response(JSON.stringify({ dane: [] }));
       throw new Error('offline');
     });
@@ -166,38 +170,66 @@ describe('tracker with iMPK', () => {
       stopNames: async () => new Map([['18401', 'Oporów']]),
     });
 
-    // First round: iMPK has not answered yet, so everything is asked.
+    // First round: iMPK and MPK are asked; Open Data only stands by, since MPK answered.
     let snapshot = await tracker.poll();
     expect(impkUrls[0]).toBe('https://impk.example:8088/mobile?function=getPositions&shortcut=true');
-    expect(calls.sort()).toEqual(['klosok', 'mpk', 'od']);
+    expect(calls.sort()).toEqual(['klosok', 'mpk']);
+    expect(snapshot.status.openData.idle).toBe('standby');
     // iMPK's answer is used on its own, not merged with MPK's.
     expect(snapshot.vehicles.map((v) => v.id)).toEqual(['impk:4102', 'impk:4105', 'impk:3102', 'impk:3112']);
     expect(snapshot.vehicles.find((v) => v.id === 'impk:3112')?.headsign).toBe('Oporów');
 
-    // MPK and Open Data are still asked while iMPK answers, and compared with it.
+    // Compared with MPK's new answer, naming the unmatched.
     expect(snapshot.comparisons).toHaveLength(1);
-    expect(snapshot.comparisons[0]).toMatchObject({ at: SERVER_AT + 2_000, counts: { impk: 4, mpk: 1, openData: 0 } });
-    expect(snapshot.comparisons[0].mpk).toMatchObject({ matched: 0, onlyImpk: 4, onlyOther: 1 });
+    expect(snapshot.comparisons[0]).toMatchObject({ at: SERVER_AT + 2_000, counts: { impk: 4, mpk: 1, openData: null } });
+    expect(snapshot.comparisons[0].mpk).toMatchObject({
+      matched: 0,
+      onlyImpk: 4,
+      onlyOther: 1,
+      onlyImpkVehicles: ['3·3102', '18·3112', '715·4102', '715·4105'],
+      onlyOtherVehicles: ['4·9'],
+    });
+
+    // While iMPK answers, MPK is asked once a minute; a round with no new MPK answer logs nothing.
     calls.length = 0;
     now += 10_000;
     snapshot = await tracker.poll();
-    // (Kłosok, failing here, is in its own pause; Open Data keeps its once-a-minute pace.)
-    expect(calls).toEqual(['mpk']);
+    expect(calls).toEqual([]);
     expect(snapshot.status.impk).toMatchObject({ ok: true, count: 4, idle: null });
-    // The map still shows iMPK alone.
     expect(snapshot.vehicles.map((v) => v.source)).toEqual(['impk', 'impk', 'impk', 'impk']);
+    expect(snapshot.comparisons).toHaveLength(1);
+    now += 50_000;
+    snapshot = await tracker.poll();
+    expect(calls.filter((c) => c !== 'klosok')).toEqual(['mpk']);
     expect(snapshot.comparisons).toHaveLength(2);
 
-    // iMPK failing: its last answer stays on the map, and nothing new is logged.
+    // iMPK failing: its last answer stays on the map, nothing is logged, and MPK
+    // goes back to every poll at once.
     impkBody = new Error('timeout');
     now += 10_000;
     snapshot = await tracker.poll();
     expect(snapshot.vehicles).toHaveLength(4);
+    calls.length = 0;
+    now += 25_000;
+    snapshot = await tracker.poll();
+    expect(calls.filter((c) => c !== 'klosok')).toEqual(['mpk']);
     expect(snapshot.comparisons).toHaveLength(2);
 
-    // Switched off: iMPK's vehicles leave the map at once.
+    // Neither iMPK nor MPK answering: Open Data fills in.
+    impkBody = new Error('timeout');
+    mpkDown = true;
+    calls.length = 0;
+    now += 35_000;
+    await tracker.poll();
+    now += 31_000;
+    snapshot = await tracker.poll();
+    expect(calls).toContain('od');
+    expect(snapshot.status.openData.idle).toBeNull();
+
+    // Switched off: iMPK's vehicles leave the map at once, and the log is cleared.
     enabled = false;
-    now += 1_000;
+    mpkDown = false;
+    now += 120_000;
     snapshot = await tracker.poll();
     expect(snapshot.status.impk.idle).toBe('off');
     expect(snapshot.vehicles.map((v) => v.source)).toEqual(['mpk']);

@@ -1,4 +1,4 @@
-import { compareSources, describeComparison } from '../src/core/realtime/compare';
+import { compareSources, describeComparison, describeUnmatched } from '../src/core/realtime/compare';
 import type { LiveVehicle } from '../src/core/realtime/types';
 
 const AT = Date.parse('2026-10-21T13:00:00Z');
@@ -37,7 +37,17 @@ describe('comparing feeds with iMPK', () => {
     ];
     const entry = compareSources(AT, impk, mpk, null);
     expect(entry.counts).toEqual({ impk: 3, mpk: 3, openData: null });
-    expect(entry.mpk).toEqual({ matched: 1, onlyImpk: 2, onlyOther: 2, medianMeters: 22, p90Meters: 22, medianLagSeconds: null });
+    expect(entry.mpk).toEqual({
+      matched: 1,
+      onlyImpk: 2,
+      onlyOther: 2,
+      medianMeters: 22,
+      p90Meters: 22,
+      medianLagSeconds: null,
+      onlyImpkVehicles: ['18·3102', '715·4102'],
+      // MPK has no side number: its own key stands in.
+      onlyOtherVehicles: ['9·c', '18·b'],
+    });
     expect(entry.openData).toBeNull();
   });
 
@@ -52,6 +62,7 @@ describe('comparing feeds with iMPK', () => {
     expect(describeComparison('Open Data', side, 3)).toBe(
       'Open Data 3: общих 2, расхождение медиана 111 м, 90% до 111 м · только в iMPK 1, только в Open Data 1 · отстаёт на 10 мин',
     );
-    expect(describeComparison('MPK', null, null)).toBe('MPK: нет свежего ответа');
+    expect(describeComparison('MPK', null, null)).toBe('MPK: в этот раз не опрашивался');
+    expect(describeUnmatched('Open Data', side)).toEqual(['только в iMPK (против Open Data): 18·3102', 'только в Open Data: 18·9999']);
   });
 });

@@ -1,6 +1,6 @@
 import { Pressable, Share, StyleSheet, Text, View } from 'react-native';
 
-import { describeComparison, type ComparisonEntry } from '../core/realtime/compare';
+import { describeComparison, describeUnmatched, type ComparisonEntry } from '../core/realtime/compare';
 import { warsawParts } from '../core/time/warsaw';
 import { useLive } from '../state/live';
 import { useTheme } from './theme';
@@ -17,7 +17,9 @@ const entryLine = (entry: ComparisonEntry) =>
   [
     `${clock(entry.at)} iMPK ${entry.counts.impk}`,
     describeComparison('MPK', entry.mpk, entry.counts.mpk),
+    ...describeUnmatched('MPK', entry.mpk).map((line) => `  ${line}`),
     describeComparison('Open Data', entry.openData, entry.counts.openData),
+    ...describeUnmatched('Open Data', entry.openData).map((line) => `  ${line}`),
   ].join('\n  ');
 
 /**
@@ -46,8 +48,14 @@ export function ComparisonLog() {
         <Text style={{ color: theme.text, fontSize: 13 }} selectable>
           {describeComparison('Open Data', latest.openData, latest.counts.openData)}
         </Text>
+        {[...describeUnmatched('MPK', latest.mpk), ...describeUnmatched('Open Data', latest.openData)].map((line) => (
+          <Text key={line} style={{ color: theme.muted, fontSize: 12 }} selectable>
+            {line}
+          </Text>
+        ))}
         <Text style={{ color: theme.muted, fontSize: 12 }}>
-          MPK сопоставляется с iMPK по линии и расстоянию (до 400 м), Open Data — по бортовому номеру. Карта показывает iMPK.
+          MPK сопоставляется с iMPK по линии и расстоянию (до 400 м), Open Data — по бортовому номеру. Карта показывает iMPK; MPK
+          опрашивается раз в минуту, Open Data — только когда iMPK и MPK молчат. Сравнивается только новый ответ.
         </Text>
         <View style={[styles.log, { borderColor: theme.border }]}>
           {entries
