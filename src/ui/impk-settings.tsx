@@ -14,6 +14,9 @@ export function ImpkSettings() {
   // Never read back from the Keychain into the form; empty means "keep".
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
+  // Any operation from the API's list, to look at its real answer.
+  const [fn, setFn] = useState('getPositions');
+  const [params, setParams] = useState('shortcut=true');
 
   const load = saved.load;
   useEffect(() => {
@@ -25,7 +28,7 @@ export function ImpkSettings() {
     try {
       await saved.save({ enabled, url, username }, password ? password : null);
       setPassword('');
-      await useImpk.getState().test();
+      await useImpk.getState().test(fn, params);
     } finally {
       setBusy(false);
     }
@@ -69,6 +72,17 @@ export function ImpkSettings() {
         autoCorrect={false}
         textContentType="password"
       />
+      <Text style={{ color: theme.muted, fontSize: 12 }}>Запрос для проверки: операция и параметры</Text>
+      <TextInput style={input} value={fn} onChangeText={setFn} placeholder="getPositions" placeholderTextColor={theme.muted} autoCapitalize="none" autoCorrect={false} />
+      <TextInput
+        style={input}
+        value={params}
+        onChangeText={setParams}
+        placeholder="symbol=10111"
+        placeholderTextColor={theme.muted}
+        autoCapitalize="none"
+        autoCorrect={false}
+      />
       <Pressable
         disabled={busy || saved.probing}
         onPress={() => void saveAndTest()}
@@ -78,7 +92,7 @@ export function ImpkSettings() {
       </Pressable>
       {saved.probe ? (
         <Text style={{ color: saved.probe.ok ? theme.text : theme.danger, fontSize: 12 }} selectable>
-          {saved.probe.ok ? 'Подключение есть: ' : 'Ошибка: '}
+          {saved.probe.ok ? 'Ответ: ' : 'Ошибка: '}
           {saved.probe.text}
         </Text>
       ) : null}

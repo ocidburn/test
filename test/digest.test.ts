@@ -1,5 +1,6 @@
 import { authorizationHeader, DigestSession, parseChallenge, requestTarget } from '../src/core/net/digest';
 import { md5 } from '../src/core/net/md5';
+import { impkUrl, parseParams } from '../src/core/realtime/impk';
 
 describe('md5', () => {
   test('RFC 1321 test suite', () => {
@@ -96,5 +97,14 @@ describe('Digest', () => {
       'login or password rejected',
     );
     expect(server.calls).toHaveLength(2);
+  });
+});
+
+describe('iMPK requests', () => {
+  test('url and params', () => {
+    expect(impkUrl('https://impk.mpk.wroc.pl:8088/', 'getPostInfo', { symbol: '10 111' })).toBe(
+      'https://impk.mpk.wroc.pl:8088/mobile?function=getPostInfo&symbol=10%20111',
+    );
+    expect(parseParams(' shortcut=true & date= &x ')).toEqual({ shortcut: 'true', date: '', x: '' });
   });
 });

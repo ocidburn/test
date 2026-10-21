@@ -3,7 +3,10 @@ import Storage from 'expo-sqlite/kv-store';
 import { create } from 'zustand';
 
 import { DigestSession } from '../core/net/digest';
-import { IMPK_DEFAULT_URL, probeImpk } from '../core/realtime/impk';
+import { IMPK_DEFAULT_URL, parseParams, probeImpk } from '../core/realtime/impk';
+
+/** How much of an answer the Data screen keeps, to copy and send. */
+const SHOWN_CHARS = 4000;
 
 const SETTINGS_KEY = 'impk.settings';
 /** The password lives in the iOS Keychain, never in the app's own storage. */
@@ -29,7 +32,7 @@ type ImpkState = Settings & {
   probing: boolean;
   load: () => Promise<void>;
   save: (settings: Settings, password: string | null) => Promise<void>;
-  test: () => Promise<void>;
+  test: (fn: string, params: string) => Promise<void>;
 };
 
 export const useImpk = create<ImpkState>((set, get) => ({
@@ -50,14 +53,21 @@ export const useImpk = create<ImpkState>((set, get) => ({
     Storage.setItemSync(SETTINGS_KEY, JSON.stringify(clean));
     set({ ...clean, hasPassword: password === null ? get().hasPassword : !!password, probe: null });
   },
-  test: async () => {
+  test: async (fn, params) => {
     set({ probing: true });
     try {
       const { url, username } = get();
       const password = await SecureStore.getItemAsync(PASSWORD_KEY, KEYCHAIN);
       if (!url || !username || !password) throw new Error('нужны адрес, логин и пароль');
-      const result = await probeImpk(new DigestSession({ username, password }), url);
-      set({ probe: { at: Date.now(), ok: true, text: `${result.bytes} байт · ${result.shape}\n\n${result.sample}` } });
+      const result = await probeImpk(new DigestSession({ username, password }), url, fn.trim(), parseParams(params));
+      const cut = result.body.length > SHOWN_CHARS ? `\n… (показано ${SHOWN_CHARS} из ${result.body.length})` : '';
+      set({
+        probe: {
+          at: Date.now(),
+          ok: true,
+          text: `${fn} · ${result.contentType ?? 'без Content-Type'} · ${result.bytes} символов · ${result.shape}\n\n${result.body.slice(0, SHOWN_CHARS)}${cut}`,
+        },
+      });
     } catch (error) {
       set({ probe: { at: Date.now(), ok: false, text: (error as Error).message } });
     } finally {

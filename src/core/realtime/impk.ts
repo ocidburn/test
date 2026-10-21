@@ -15,7 +15,7 @@ export const impkUrl = (base: string, fn: string, params: Record<string, string>
   return `${base.trim().replace(/\/+$/, '')}/mobile?${query.join('&')}`;
 };
 
-export type ImpkProbe = { bytes: number; shape: string; sample: string };
+export type ImpkProbe = { contentType: string | null; bytes: number; shape: string; body: string };
 
 const describeShape = (value: unknown): string => {
   if (Array.isArray(value)) return `JSON, список из ${value.length}`;
@@ -23,18 +23,41 @@ const describeShape = (value: unknown): string => {
   return `JSON, ${typeof value}`;
 };
 
+/** `a=1&b=x y` → { a: '1', b: 'x y' }; a bare name gets an empty value. */
+export const parseParams = (text: string): Record<string, string> => {
+  const params: Record<string, string> = {};
+  for (const part of text.split('&')) {
+    const trimmed = part.trim();
+    if (!trimmed) continue;
+    const eq = trimmed.indexOf('=');
+    if (eq === -1) params[trimmed] = '';
+    else params[trimmed.slice(0, eq).trim()] = trimmed.slice(eq + 1).trim();
+  }
+  return params;
+};
+
 /**
- * Ask for vehicle positions once and say what came back. Until the answer's
- * format is pinned down from a real response, this is what the Data screen
- * shows: size, shape and the start of the body.
+ * Call one operation and say what came back: content type, size, shape and
+ * the body. The answers' formats are not documented anywhere; until they
+ * are pinned down from real responses, this is what the Data screen shows.
  */
-export const probeImpk = async (session: DigestSession, base: string, fetchImpl?: FetchLike): Promise<ImpkProbe> => {
-  const body = await session.fetchText(impkUrl(base, 'getPositions'), { fetchImpl, timeoutMs: 20_000 });
+export const probeImpk = async (
+  session: DigestSession,
+  base: string,
+  fn: string,
+  params: Record<string, string> = {},
+  fetchImpl?: FetchLike,
+): Promise<ImpkProbe> => {
+  const { body, contentType } = await session.fetch(
+    impkUrl(base, fn, params),
+    async (response) => ({ body: await response.text(), contentType: response.headers.get('content-type') }),
+    { fetchImpl, timeoutMs: 20_000 },
+  );
   let shape = 'не JSON';
   try {
     shape = describeShape(JSON.parse(body));
   } catch {
     // Shown as is.
   }
-  return { bytes: body.length, shape, sample: body.slice(0, 600) };
+  return { contentType, bytes: body.length, shape, body };
 };

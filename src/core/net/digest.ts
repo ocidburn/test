@@ -93,7 +93,11 @@ export class DigestSession {
     private readonly cnonce: () => string = randomCnonce,
   ) {}
 
-  async fetchText(url: string, options: RequestOptions = {}): Promise<string> {
+  fetchText(url: string, options: RequestOptions = {}): Promise<string> {
+    return this.fetch(url, (response) => response.text(), options);
+  }
+
+  async fetch<T>(url: string, read: (response: Response) => Promise<T>, options: RequestOptions = {}): Promise<T> {
     const method = (options.method ?? 'GET').toUpperCase();
     const send = () => {
       const headers = { ...(options.headers as Record<string, string> | undefined) };
@@ -106,7 +110,7 @@ export class DigestSession {
           cnonce: this.cnonce(),
         });
       }
-      return request(url, (response) => response.text(), { ...options, method, headers });
+      return request(url, read, { ...options, method, headers });
     };
     try {
       return await send();
