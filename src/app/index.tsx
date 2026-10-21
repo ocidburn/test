@@ -1,7 +1,7 @@
 import * as Location from 'expo-location';
 import { router, Stack, useFocusEffect } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AppState, Pressable, StyleSheet, Text, View } from 'react-native';
+import { AppState, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import MapView, { Marker, Polyline, type Region } from 'react-native-maps';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -11,6 +11,7 @@ import { matchVariant, nextStop, stopsAlong, type Variant } from '../core/realti
 import type { RunDescription } from '../core/realtime/trip-match';
 import type { LiveVehicle } from '../core/realtime/types';
 import { buildActiveOn, describeVehicle } from '../platform/describe';
+import { useFavorites } from '../state/favorites';
 import { startLive, stopLive, useLive } from '../state/live';
 import { useTimetable } from '../state/timetable';
 import { StatusBanner } from '../ui/status-banner';
@@ -47,6 +48,7 @@ export default function MapScreen() {
   const at = useLive((state) => state.at);
   const status = useLive((state) => state.status);
   const filter = useLive((state) => state.filter);
+  const favorites = useFavorites((state) => state.stops);
 
   const [region, setRegion] = useState<Region>(WROCLAW);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -277,6 +279,27 @@ export default function MapScreen() {
             <Text style={{ color: theme.text, fontSize: 18, fontWeight: '700' }}>⋯</Text>
           </Pressable>
         </View>
+        {favorites.length ? (
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            style={styles.favoritesBar}
+            contentContainerStyle={styles.favorites}
+            keyboardShouldPersistTaps="handled"
+          >
+            {favorites.map((stop) => (
+              <Pressable
+                key={stop}
+                onPress={() => router.push({ pathname: '/stop/[name]', params: { name: stop } })}
+                style={[styles.favorite, { backgroundColor: theme.surface }]}
+              >
+                <Text style={{ color: theme.text, fontWeight: '600' }} numberOfLines={1}>
+                  ★ {stop}
+                </Text>
+              </Pressable>
+            ))}
+          </ScrollView>
+        ) : null}
         <StatusBanner />
         <View style={[styles.chip, { backgroundColor: theme.surface }]}>
           <View style={[styles.dot, { backgroundColor: !at ? theme.muted : failing.length === 3 ? theme.danger : failing.length ? theme.amber : '#16A34A' }]} />
@@ -329,6 +352,19 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 2 },
   },
   searchButton: { flex: 1, alignItems: 'flex-start' },
+  favoritesBar: { flexGrow: 0 },
+  favorites: { paddingHorizontal: 12, paddingVertical: 4, gap: 8 },
+  favorite: {
+    height: 36,
+    maxWidth: 220,
+    paddingHorizontal: 14,
+    borderRadius: 18,
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOpacity: 0.12,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 2 },
+  },
   chip: {
     alignSelf: 'flex-start',
     marginHorizontal: 12,

@@ -1,5 +1,5 @@
 import { importGtfs } from '../src/core/gtfs/importer';
-import { getDepartures, getStopPosts, readMeta, searchStops } from '../src/core/gtfs/queries';
+import { getDepartures, getStopPosts, nearbyStops, readMeta, searchStops, stopsByNames } from '../src/core/gtfs/queries';
 import { buildFixtureZip, warsaw } from './fixtures/gtfs';
 import { openTestDb } from './sqljs-db';
 
@@ -107,5 +107,25 @@ describe('departures', () => {
     expect(departures[0].line).toBe('4');
     const later = await getDepartures(db, await rynekIdxs(db), { now: warsaw('2026-06-15T08:01:30') });
     expect(new Date(later[0].at).toISOString()).toBe('2026-06-15T07:00:00.000Z');
+  });
+});
+
+describe('favourites and nearby stops', () => {
+  test('stops by name keep the order asked and drop unknown names', async () => {
+    const { db } = await importFixture();
+    const stops = await stopsByNames(db, ['Świdnicka', 'Nie ma', 'Rynek']);
+    expect(stops.map((stop) => [stop.name, stop.posts, stop.lines.map((line) => line.name)])).toEqual([
+      ['Świdnicka', 2, ['4']],
+      ['Rynek', 2, ['4', '128', '240', 'A']],
+    ]);
+  });
+
+  test('nearby stops, nearest first, within the radius', async () => {
+    const { db } = await importFixture();
+    // Standing 100 m south of Rynek; Świdnicka is ~550 m further.
+    const stops = await nearbyStops(db, 51.1091, 17.032, { radiusMeters: 800 });
+    expect(stops.map((stop) => stop.name)).toEqual(['Rynek', 'Świdnicka']);
+    expect(stops[0].distanceMeters).toBeLessThan(stops[1].distanceMeters);
+    expect(await nearbyStops(db, 51.1091, 17.032, { radiusMeters: 150 })).toHaveLength(1);
   });
 });

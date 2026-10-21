@@ -5,6 +5,7 @@ import { FlatList, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View
 import { getDepartures, getStopPosts, type Departure, type StopPost } from '../../core/gtfs/queries';
 import { formatClock } from '../../core/time/warsaw';
 import { buildActiveOn, liveDelaysForStop, type StopLive } from '../../platform/describe';
+import { useFavorites } from '../../state/favorites';
 import { useLive } from '../../state/live';
 import { useTimetable } from '../../state/timetable';
 import { LineBadge } from '../../ui/line-badge';
@@ -31,6 +32,8 @@ export default function StopScreen() {
   const { name } = useLocalSearchParams<{ name: string }>();
   const db = useTimetable((state) => state.db);
   const vehicles = useLive((state) => state.vehicles);
+  const isFavorite = useFavorites((state) => (name ? state.stops.includes(name) : false));
+  const toggleFavorite = useFavorites((state) => state.toggle);
   const [posts, setPosts] = useState<StopPost[]>([]);
   const [selectedPost, setSelectedPost] = useState<number | null>(null);
   const [departures, setDepartures] = useState<Departure[]>([]);
@@ -112,7 +115,21 @@ export default function StopScreen() {
 
   return (
     <View style={styles.screen}>
-      <Stack.Screen options={{ title: name ?? '' }} />
+      <Stack.Screen
+        options={{
+          title: name ?? '',
+          headerRight: () =>
+            name ? (
+              <Pressable
+                onPress={() => toggleFavorite(name)}
+                hitSlop={12}
+                accessibilityLabel={isFavorite ? 'Убрать из избранного' : 'В избранное'}
+              >
+                <Text style={{ fontSize: 22, color: isFavorite ? theme.amber : theme.muted }}>{isFavorite ? '★' : '☆'}</Text>
+              </Pressable>
+            ) : null,
+        }}
+      />
       {posts.length > 1 ? (
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chips} style={styles.chipBar}>
           {[{ stopIdx: null as number | null, label: 'Все' }, ...posts.map((post) => ({ stopIdx: post.stopIdx as number | null, label: post.code ?? post.stopId }))].map(

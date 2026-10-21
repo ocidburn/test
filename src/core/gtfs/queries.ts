@@ -1,4 +1,5 @@
 import type { Db } from '../db';
+import { distanceMeters } from '../geo';
 import { compareLines, isTramLine } from '../lines';
 import { normalizeSearch } from '../text';
 import { addDays, DAY_SECONDS, serviceDayBaseMs, warsawDateKey, weekdayOf } from '../time/warsaw';
@@ -71,6 +72,57 @@ export const searchStops = async (db: Db, query: string, limit = 30): Promise<St
     [`${needle}%`, `% ${needle}%`, `%${needle}%`, limit],
   );
   return rows.map((row) => ({ name: row.name, posts: row.posts, lines: toLineRefs(row.lines) }));
+};
+
+/** Stops by exact name, in the order asked, with their lines; names no longer in the timetable are dropped. */
+export const stopsByNames = async (db: Db, names: string[]): Promise<StopSearchResult[]> => {
+  if (!names.length) return [];
+  const rows = await db.all<{ name: string; posts: number; lines: string | null }>(
+    `SELECT s.name AS name,
+            COUNT(DISTINCT s.stop_idx) AS posts,
+            GROUP_CONCAT(r.short_name || ':' || COALESCE(r.route_type, '')) AS lines
+       FROM stops s
+       LEFT JOIN stop_routes sr ON sr.stop_idx = s.stop_idx
+       LEFT JOIN routes r ON r.route_idx = sr.route_idx
+      WHERE s.name IN (${names.map(() => '?').join(',')})
+      GROUP BY s.name`,
+    names,
+  );
+  const byName = new Map(rows.map((row) => [row.name, { name: row.name, posts: row.posts, lines: toLineRefs(row.lines) }]));
+  return names.map((name) => byName.get(name)).filter((stop): stop is StopSearchResult => !!stop);
+};
+
+export type NearbyStop = StopSearchResult & { distanceMeters: number };
+
+/**
+ * Stops near a point, nearest first, by the distance to their closest post.
+ * Only posts some line serves; a box of about ±radius is scanned, then
+ * measured exactly.
+ */
+export const nearbyStops = async (
+  db: Db,
+  lat: number,
+  lon: number,
+  { radiusMeters = 800, limit = 8 }: { radiusMeters?: number; limit?: number } = {},
+): Promise<NearbyStop[]> => {
+  const dLat = radiusMeters / 111_320;
+  const dLon = radiusMeters / (111_320 * Math.cos((lat * Math.PI) / 180));
+  const posts = await db.all<{ name: string; lat: number; lon: number }>(
+    `SELECT name, lat, lon FROM stops
+      WHERE lat BETWEEN ? AND ? AND lon BETWEEN ? AND ?
+        AND stop_idx IN (SELECT stop_idx FROM stop_routes)`,
+    [lat - dLat, lat + dLat, lon - dLon, lon + dLon],
+  );
+  const nearest = new Map<string, number>();
+  for (const post of posts) {
+    const meters = distanceMeters(lat, lon, post.lat, post.lon);
+    if (meters > radiusMeters) continue;
+    const known = nearest.get(post.name);
+    if (known === undefined || meters < known) nearest.set(post.name, meters);
+  }
+  const names = [...nearest.entries()].sort((a, b) => a[1] - b[1]).slice(0, limit).map(([name]) => name);
+  const stops = await stopsByNames(db, names);
+  return stops.map((stop) => ({ ...stop, distanceMeters: Math.round(nearest.get(stop.name)!) }));
 };
 
 export type StopPost = { stopIdx: number; stopId: string; code: string | null; name: string; lat: number | null; lon: number | null };
