@@ -1,5 +1,6 @@
 import { importGtfs } from '../src/core/gtfs/importer';
 import { getLines, getStopsInBBox, getVariants, getVariantStops, lineSets, timetableResolver } from '../src/core/gtfs/map-queries';
+import { markerKind } from '../src/core/lines';
 import { matchVariant } from '../src/core/realtime/route-match';
 import { buildFixtureZip } from './fixtures/gtfs';
 import { openTestDb } from './sqljs-db';
@@ -51,4 +52,14 @@ test('the resolver reads trip and route ids from the timetable', async () => {
   await expect(resolver.byTripId('nope')).resolves.toBeNull();
   await expect(resolver.hasLine('240')).resolves.toBe(true);
   await expect(resolver.hasLine('999')).resolves.toBe(false);
+});
+
+test('marker body by kind of line', () => {
+  expect([markerKind('8', true), markerKind('146', false), markerKind('K', false), markerKind('242', false), markerKind('911', false)]).toEqual([
+    'tram',
+    'bus',
+    'express',
+    'night',
+    'suburban',
+  ]);
 });

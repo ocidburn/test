@@ -1,7 +1,7 @@
 import { getVariantProfile, buildActiveOn } from '../src/core/gtfs/trip-queries';
 import { importGtfs } from '../src/core/gtfs/importer';
 import { getVariants } from '../src/core/gtfs/map-queries';
-import { describeRun, matchTrip, MAX_DELAY_SECONDS, offsetAt, type VariantProfile } from '../src/core/realtime/trip-match';
+import { delayStatus, describeRun, matchTrip, MAX_DELAY_SECONDS, offsetAt, type VariantProfile } from '../src/core/realtime/trip-match';
 import { buildFixtureZip, warsaw } from './fixtures/gtfs';
 import { openTestDb } from './sqljs-db';
 
@@ -126,5 +126,11 @@ describe('describeRun', () => {
       trips: [],
     };
     expect(describeRun(profile, 0, Date.now(), () => true)).toBeNull();
+  });
+});
+
+describe('delayStatus', () => {
+  test('buckets for the delay ring', () => {
+    expect([null, -90, 0, 119, 120, 300, 301].map(delayStatus)).toEqual(['none', 'ok', 'ok', 'ok', 'mid', 'mid', 'late']);
   });
 });

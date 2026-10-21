@@ -61,3 +61,15 @@ export const compareLines = (a: string, b: string): number => {
   if (bNum !== null) return 1;
   return a.localeCompare(b);
 };
+
+/** The marker body for a line: shape tells the kind apart even without colour. */
+export type MarkerKind = 'tram' | 'bus' | 'express' | 'night' | 'suburban';
+
+export const markerKind = (line: string, tram: boolean): MarkerKind => {
+  if (tram) return 'tram';
+  const type = lineToType(line);
+  if (type === 'busNight') return 'night';
+  if (type === 'busExpress') return 'express';
+  if (type === 'busSuburban' || type === 'busZone') return 'suburban';
+  return 'bus';
+};

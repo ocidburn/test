@@ -186,3 +186,13 @@ export const describeRun = (
     stopsAhead: stops.length - nextIndex,
   };
 };
+
+/** Ring colour class for a delay: on time (< 2 min late), 2–5 min, over 5 min, or unknown. */
+export type DelayStatus = 'ok' | 'mid' | 'late' | 'none';
+
+export const delayStatus = (seconds: number | null | undefined): DelayStatus => {
+  if (seconds === null || seconds === undefined || !Number.isFinite(seconds)) return 'none';
+  if (seconds < 120) return 'ok';
+  if (seconds <= 300) return 'mid';
+  return 'late';
+};
