@@ -40,7 +40,7 @@ export function OfflineCard() {
     return (
       <Text style={[styles.note, { color: theme.muted }]}>
         Офлайн-загрузка есть только у подложек, чьи условия её разрешают: ортофото Польши HD и слои Вроцлава (SIP). OSM, Thunderforest,
-        CARTO, Stadia и Google запрещают массовую загрузку или требуют платный тариф.
+        Google запрещают массовую загрузку или требуют платный тариф.
       </Text>
     );
   }

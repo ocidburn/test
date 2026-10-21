@@ -11,6 +11,8 @@ const SESSION_KEY = 'map.googleSession';
 const KEYCHAIN = { keychainAccessible: SecureStore.AFTER_FIRST_UNLOCK_THIS_DEVICE_ONLY };
 const keychainName = (name: KeyName) => `map.key.${name}`;
 const NAMES = Object.keys(KEY_NAMES) as KeyName[];
+/** Keys of providers that were dropped (CARTO, Stadia): removed from the Keychain at launch. */
+const DROPPED = ['carto', 'stadia'];
 
 const readSelected = () => {
   try {
@@ -58,6 +60,7 @@ export const useBasemap = create<BasemapState>((set, get) => ({
       if (value) keys[name] = value;
     }
     set({ keys, loaded: true });
+    for (const name of DROPPED) await SecureStore.deleteItemAsync(`map.key.${name}`, KEYCHAIN).catch(() => {});
   },
   saveKey: async (name, value) => {
     const trimmed = value.trim();

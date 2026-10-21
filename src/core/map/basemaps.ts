@@ -5,7 +5,7 @@
  */
 
 export type AppleMapType = 'mutedStandard' | 'standard' | 'satellite' | 'hybrid' | 'satelliteFlyover' | 'hybridFlyover';
-export type KeyName = 'thunderforest' | 'carto' | 'stadia' | 'google';
+export type KeyName = 'thunderforest' | 'google';
 export type BasemapGroup = 'apple' | 'open' | 'keyed' | 'aerial' | 'city' | 'google';
 
 type Common = { id: string; name: string; group: BasemapGroup };
@@ -36,8 +36,6 @@ export type Basemap =
 
 export const KEY_NAMES: Record<KeyName, string> = {
   thunderforest: 'Thunderforest',
-  carto: 'CARTO',
-  stadia: 'Stadia Maps',
   google: 'Google Map Tiles API',
 };
 
@@ -97,32 +95,6 @@ export const BASEMAPS: Basemap[] = [
     attribution: `Maps Thunderforest, Data ${OSM}`,
     cacheSeconds: WEEK,
   },
-  // CARTO: a key is required since 25 Sep 2026; free non-commercial use up to 5M requests a month.
-  {
-    id: 'carto',
-    name: 'Positron / Dark Matter (CARTO)',
-    group: 'keyed',
-    kind: 'xyz',
-    url: 'https://basemaps.cartocdn.com/rastertiles/light_all/{z}/{x}/{y}.png?key={key}',
-    darkUrl: 'https://basemaps.cartocdn.com/rastertiles/dark_all/{z}/{x}/{y}.png?key={key}',
-    key: 'carto',
-    maxZoom: 20,
-    attribution: `${OSM}, CARTO`,
-    cacheSeconds: WEEK,
-  },
-  // Stadia: free plan, 200 000 tiles a month, non-commercial.
-  {
-    id: 'stadia',
-    name: 'Alidade Smooth (Stadia)',
-    group: 'keyed',
-    kind: 'xyz',
-    url: 'https://tiles.stadiamaps.com/tiles/alidade_smooth/{z}/{x}/{y}.png?api_key={key}',
-    darkUrl: 'https://tiles.stadiamaps.com/tiles/alidade_smooth_dark/{z}/{x}/{y}.png?api_key={key}',
-    key: 'stadia',
-    maxZoom: 20,
-    attribution: `Stadia Maps, OpenMapTiles, ${OSM}`,
-    cacheSeconds: WEEK,
-  },
   // GUGiK's HighResolution orthophoto (5–25 cm, the newest flights), free for any use since 2020 (capabilities:
   // "brak ograniczeń"; the Geoportal terms do not restrict harvesting the orthophoto, unlike the TOPO service).
   // Its WMTS has only EPSG:2180/4326 matrix sets, but its WMS reprojects a GetMap in EPSG:3857 although the
@@ -175,22 +147,9 @@ export const BASEMAPS: Basemap[] = [
     replace: true,
   },
   // The city's base map ("Podkładowa mapa Wrocławia" / Mapa podstawowa: addresses, streets, railways,
-  // buildings, greenery, water, land cover), drawn grey or in colour; geoportal.wroclaw.pl/zasoby lists its
+  // buildings, greenery, water, land cover), in colour; geoportal.wroclaw.pl/zasoby lists its
   // terms as "brak ograniczeń" (no restrictions), so offline download is allowed. The city asks for its
   // source to be named as below.
-  {
-    id: 'wroclaw-grey',
-    name: 'Серая карта города',
-    group: 'city',
-    kind: 'xyz',
-    url: 'https://gis.um.wroc.pl/portal_srv/rest/services/podklad_szary_odniesienie/MapServer/tile/{z}/{y}/{x}',
-    maxZoom: 21,
-    attribution: 'Źródło: System Informacji Przestrzennej Wrocławia, www.geoportal.wroclaw.pl',
-    cacheSeconds: 30 * 86_400,
-    under: 'mutedStandard',
-    replace: false,
-    offline: true,
-  },
   {
     id: 'wroclaw-colour',
     name: 'Цветная карта города',
