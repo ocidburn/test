@@ -4,6 +4,13 @@ import { Pressable, StyleSheet, Switch, Text, TextInput, View } from 'react-nati
 import { useImpk } from '../state/impk';
 import { useTheme } from './theme';
 
+/** Operations whose answers are still to be seen; the post symbol is an example to replace. */
+const PRESETS = [
+  { label: 'Позиции машин', fn: 'getPositions', params: 'shortcut=true' },
+  { label: 'Табло słupka', fn: 'getPostInfo', params: 'symbol=21011' },
+  { label: 'Табло HTML', fn: 'getPostPlate', params: 'post=21011&line=18&output=html' },
+];
+
 /** iMPK login on the Data screen: the user's own account, kept on the phone. */
 export function ImpkSettings() {
   const theme = useTheme();
@@ -72,13 +79,32 @@ export function ImpkSettings() {
         autoCorrect={false}
         textContentType="password"
       />
-      <Text style={{ color: theme.muted, fontSize: 12 }}>Запрос для проверки: операция и параметры</Text>
+      <Text style={{ color: theme.muted, fontSize: 12 }}>Запрос для проверки</Text>
+      <View style={styles.presets}>
+        {PRESETS.map((preset) => {
+          const on = fn === preset.fn && params === preset.params;
+          return (
+            <Pressable
+              key={preset.label}
+              onPress={() => {
+                setFn(preset.fn);
+                setParams(preset.params);
+              }}
+              style={[styles.preset, { borderColor: theme.accent, backgroundColor: on ? theme.accent : 'transparent' }]}
+            >
+              <Text style={{ color: on ? '#FFFFFF' : theme.accent, fontSize: 13, fontWeight: '600' }}>{preset.label}</Text>
+            </Pressable>
+          );
+        })}
+      </View>
+      <Text style={[styles.caption, { color: theme.muted }]}>Операция</Text>
       <TextInput style={input} value={fn} onChangeText={setFn} placeholder="getPositions" placeholderTextColor={theme.muted} autoCapitalize="none" autoCorrect={false} />
+      <Text style={[styles.caption, { color: theme.muted }]}>Параметры</Text>
       <TextInput
         style={input}
         value={params}
         onChangeText={setParams}
-        placeholder="symbol=10111"
+        placeholder="symbol=21011"
         placeholderTextColor={theme.muted}
         autoCapitalize="none"
         autoCorrect={false}
@@ -107,6 +133,9 @@ const styles = StyleSheet.create({
   card: { marginHorizontal: 16, borderRadius: 12, padding: 12, gap: 10 },
   row: { flexDirection: 'row', alignItems: 'center' },
   input: { height: 40, borderRadius: 8, paddingHorizontal: 10, fontSize: 15 },
+  presets: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  preset: { borderWidth: 1.5, borderRadius: 16, paddingHorizontal: 12, paddingVertical: 6 },
+  caption: { fontSize: 12, marginBottom: -6 },
   button: { height: 44, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
   buttonText: { color: '#FFFFFF', fontSize: 15, fontWeight: '600' },
 });
