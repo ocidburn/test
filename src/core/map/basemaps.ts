@@ -146,8 +146,7 @@ export const BASEMAPS: Basemap[] = [
   // Wrocław's SIP portal (ArcGIS Enterprise): cached tiles in Web Mercator, the standard scheme, so
   // {z}/{y}/{x} directly; levels to 21; 404 outside the city, where Apple's map shows through.
   // Orthophoto 2024 (GUGiK's, 5 cm, the same image as the HD layer here, but cached: fast), street names
-  // drawn in; geoportal.wroclaw.pl/zasoby: "brak ograniczeń". (The 2025 flight is for viewing in SIP's own
-  // apps only, so it is not here.)
+  // drawn in; geoportal.wroclaw.pl/zasoby: "brak ograniczeń".
   {
     id: 'wroclaw-orto-2024',
     name: 'Ортофото 2024 с улицами',
@@ -157,9 +156,23 @@ export const BASEMAPS: Basemap[] = [
     maxZoom: 21,
     attribution: 'Ortofotomapa 2024 (GUGiK); źródło: System Informacji Przestrzennej Wrocławia, www.geoportal.wroclaw.pl',
     cacheSeconds: 30 * 86_400,
-    under: 'satellite',
-    replace: false,
+    // Apple's satellite underneath flashed on every zoom while the new tiles loaded; replaced instead, the
+    // map shows its neutral grid meanwhile (and nothing beyond the city, where the portal has no tiles).
+    replace: true,
     offline: true,
+  },
+  // TEST, to be removed in the next build: the 2025 flight (LifeCoolCity, 19–22 Mar 2025, 5 cm). Its terms
+  // allow viewing it through the city's WMTS service and in SIP's own apps only: no offline download.
+  {
+    id: 'wroclaw-orto-2025-test',
+    name: 'Ортофото 2025 (тест)',
+    group: 'city',
+    kind: 'xyz',
+    url: 'https://gis.um.wroc.pl/portal_srv/rest/services/Ortofotomapa_2025/MapServer/tile/{z}/{y}/{x}',
+    maxZoom: 21,
+    attribution: 'Ortofotomapa 2025 (LifeCoolCity); źródło: System Informacji Przestrzennej Wrocławia, www.geoportal.wroclaw.pl',
+    cacheSeconds: 7 * 86_400,
+    replace: true,
   },
   // The city's base map ("Podkładowa mapa Wrocławia" / Mapa podstawowa: addresses, streets, railways,
   // buildings, greenery, water, land cover), drawn grey or in colour; geoportal.wroclaw.pl/zasoby lists its
