@@ -30,7 +30,9 @@ Run lint, typecheck and tests before committing.
   GTFS times can exceed 24:00 and belong to the previous service day.
 - HTTP: use `src/core/net/http.ts`; its timeout covers reading the body.
 - Do not add entitlements that a free Apple ID cannot sign (push, App Groups, iCloud).
-  The arrival alert, when it comes, is a local notification.
+  The arrival reminder is a local notification. expo-notifications' plugin is applied automatically
+  on prebuild and adds `aps-environment`; `plugins/without-push-entitlement.js` removes it again.
+  After touching native dependencies, prebuild and check `ios/*/*.entitlements` is an empty dict.
 - Live sources fail independently; a failure is reported in its `SourceStatus`, never by emptying the map.
   `bus_position` answers `200 []` to a body it does not understand — that is an error, not "no vehicles".
 - The GTFS-RT decoder is hand-written (`src/core/realtime/gtfs-rt.ts`); protobufjs is a dev dependency for tests only.

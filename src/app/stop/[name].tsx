@@ -1,12 +1,13 @@
 import { Stack, useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { FlatList, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, FlatList, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { getDepartures, getStopPosts, type Departure, type StopPost } from '../../core/gtfs/queries';
 import { formatClock } from '../../core/time/warsaw';
 import { buildActiveOn, liveDelaysForStop, type StopLive } from '../../platform/describe';
 import { useFavorites } from '../../state/favorites';
 import { useLive } from '../../state/live';
+import { useReminders } from '../../state/reminders';
 import { useTimetable } from '../../state/timetable';
 import { LineBadge } from '../../ui/line-badge';
 import { useTheme } from '../../ui/theme';
@@ -21,6 +22,10 @@ const countdown = (at: number, now: number) => {
   return formatClock(at);
 };
 
+/** One departure row: a run, on its service day, at one post. */
+const rowKey = (departure: { tripIdx: number; serviceDay: number; stopIdx: number }) =>
+  `${departure.tripIdx}-${departure.serviceDay}-${departure.stopIdx}`;
+
 const delayLabel = (seconds: number) => {
   const minutes = Math.round(seconds / 60);
   if (minutes === 0) return 'вовремя';
@@ -34,6 +39,10 @@ export default function StopScreen() {
   const vehicles = useLive((state) => state.vehicles);
   const isFavorite = useFavorites((state) => (name ? state.stops.includes(name) : false));
   const toggleFavorite = useFavorites((state) => state.toggle);
+  const reminders = useReminders((state) => state.items);
+  const addReminder = useReminders((state) => state.add);
+  const removeReminder = useReminders((state) => state.remove);
+  const rescheduleReminder = useReminders((state) => state.reschedule);
   const [posts, setPosts] = useState<StopPost[]>([]);
   const [selectedPost, setSelectedPost] = useState<number | null>(null);
   const [departures, setDepartures] = useState<Departure[]>([]);
@@ -112,6 +121,56 @@ export default function StopScreen() {
     .filter((row) => row.at >= now - 60_000)
     .sort((a, b) => a.at - b.at);
   const liveCount = rows.filter((row) => row.isLive).length;
+  const reminderByKey = new Map(reminders.map((reminder) => [reminder.key, reminder]));
+
+  // While the board is open, a reminded run whose live estimate moved by
+  // more than a minute gets its reminder moved too.
+  const drift = rows
+    .filter((row) => {
+      const reminder = reminderByKey.get(rowKey(row.departure));
+      return reminder && Math.abs(reminder.departAt - row.at) > 60_000;
+    })
+    .map((row) => `${rowKey(row.departure)}@${Math.round(row.at / 60_000)}`)
+    .join(',');
+  useEffect(() => {
+    if (!drift) return;
+    for (const entry of drift.split(',')) {
+      const [key, minute] = entry.split('@');
+      void rescheduleReminder(key, Number(minute) * 60_000).catch(() => {});
+    }
+  }, [drift, rescheduleReminder]);
+
+  const onRowPress = (row: (typeof rows)[number]) => {
+    const key = rowKey(row.departure);
+    const title = `${row.departure.line}${row.departure.headsign ? ` → ${row.departure.headsign}` : ''}`;
+    const existing = reminderByKey.get(key);
+    if (existing) {
+      Alert.alert(title, `Напоминание за ${existing.minutesBefore} мин до ${formatClock(existing.departAt)}`, [
+        { text: 'Убрать напоминание', style: 'destructive', onPress: () => void removeReminder(key) },
+        { text: 'Оставить', style: 'cancel' },
+      ]);
+      return;
+    }
+    const remind = (minutesBefore: number) =>
+      addReminder(key, {
+        stop: name ?? '',
+        line: row.departure.line,
+        headsign: row.departure.headsign,
+        departAt: row.at,
+        minutesBefore,
+      }).catch((error: Error) => Alert.alert('Не получилось', error.message));
+    Alert.alert(
+      title,
+      `Отправление в ${formatClock(row.at)}. Напомнить заранее?` +
+        (row.isLive ? ' Время по текущей оценке: пока табло открыто, напоминание будет сдвигаться вместе с ним.' : ''),
+      [
+        { text: 'За 2 мин', onPress: () => void remind(2) },
+        { text: 'За 5 мин', onPress: () => void remind(5) },
+        { text: 'За 10 мин', onPress: () => void remind(10) },
+        { text: 'Отмена', style: 'cancel' },
+      ],
+    );
+  };
 
   return (
     <View style={styles.screen}>
@@ -150,7 +209,7 @@ export default function StopScreen() {
       ) : null}
       <FlatList
         data={rows}
-        keyExtractor={(item) => `${item.departure.tripIdx}-${item.departure.serviceDay}-${item.departure.stopIdx}`}
+        keyExtractor={(item) => rowKey(item.departure)}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
         contentContainerStyle={styles.list}
         ItemSeparatorComponent={() => <View style={[styles.separator, { backgroundColor: theme.border }]} />}
@@ -162,7 +221,10 @@ export default function StopScreen() {
           const soon = item.at - now < 15 * 60_000;
           const late = item.delaySeconds !== null && item.delaySeconds >= 120;
           return (
-            <View style={[styles.row, { backgroundColor: theme.surface }]}>
+            <Pressable
+              onPress={() => onRowPress(item)}
+              style={({ pressed }) => [styles.row, { backgroundColor: pressed ? theme.inputBackground : theme.surface }]}
+            >
               <LineBadge line={departure.line} tram={departure.tram} />
               <View style={styles.middle}>
                 <Text style={[styles.headsign, { color: theme.text }]} numberOfLines={1}>
@@ -181,6 +243,7 @@ export default function StopScreen() {
               </View>
               <View style={styles.right}>
                 <View style={styles.timeRow}>
+                  {reminderByKey.has(rowKey(departure)) ? <Text style={styles.bell}>🔔</Text> : null}
                   {item.isLive ? <View style={[styles.dot, { backgroundColor: '#16A34A' }]} /> : null}
                   <Text style={[styles.time, { color: soon ? theme.amber : theme.text }]}>{countdown(item.at, now)}</Text>
                 </View>
@@ -188,7 +251,7 @@ export default function StopScreen() {
                   <Text style={[styles.delay, { color: late ? theme.danger : theme.muted }]}>{delayLabel(item.delaySeconds)}</Text>
                 ) : null}
               </View>
-            </View>
+            </Pressable>
           );
         }}
       />
@@ -196,6 +259,7 @@ export default function StopScreen() {
         {liveCount
           ? `Онлайн: ${liveCount} рейсов отслеживаются · задержка по расписанию GTFS`
           : 'По расписанию GTFS · онлайн появится, когда рейс выйдет на линию'}
+        {' · нажмите на рейс, чтобы напомнить'}
       </Text>
     </View>
   );
@@ -214,6 +278,7 @@ const styles = StyleSheet.create({
   right: { alignItems: 'flex-end', gap: 2 },
   timeRow: { flexDirection: 'row', alignItems: 'center', gap: 5 },
   dot: { width: 7, height: 7, borderRadius: 3.5 },
+  bell: { fontSize: 12 },
   time: { fontSize: 18, fontWeight: '700', fontVariant: ['tabular-nums'] },
   delay: { fontSize: 12, fontWeight: '600' },
   separator: { height: StyleSheet.hairlineWidth, marginLeft: 68 },

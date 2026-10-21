@@ -3,6 +3,7 @@ import { StatusBar } from 'expo-status-bar';
 import { useEffect } from 'react';
 import { AppState } from 'react-native';
 
+import { setupNotifications } from '../platform/notifications';
 import { useTimetable } from '../state/timetable';
 import { useTheme } from '../ui/theme';
 
@@ -12,6 +13,7 @@ export default function RootLayout() {
   const update = useTimetable((state) => state.update);
 
   useEffect(() => {
+    setupNotifications();
     void init();
     // Coming back to the app is the moment to look for a new timetable;
     // `update` itself skips the network unless a check is due.

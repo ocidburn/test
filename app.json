@@ -37,7 +37,8 @@
           "motionUsagePermission": false,
           "isIosBackgroundLocationEnabled": false
         }
-      ]
+      ],
+      "./plugins/without-push-entitlement"
     ],
     "platforms": [
       "ios"
