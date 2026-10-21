@@ -9,7 +9,7 @@ import { tileDirectory } from '../platform/offline-tiles';
 import { googleSession, useBasemap } from '../state/basemap';
 import { useOffline } from '../state/offline';
 
-type Tile = { kind: 'xyz' | 'wms'; url: string; maxZoom: number; cacheSeconds: number; cacheDir: string | null };
+type Tile = { kind: 'xyz' | 'wms'; url: string; maxZoom: number; cacheSeconds: number; cacheDir: string | null; replace: boolean };
 
 export type BasemapLayer = {
   basemap: Basemap;
@@ -94,7 +94,7 @@ export const useBasemapLayer = (region: Region): BasemapLayer => {
       basemap,
       // Under the tiles, a map type without Apple's street names: Google draws its own.
       mapType: 'satellite',
-      tile: { kind: 'xyz', url: googleTileUrl(session, googleKey), maxZoom: 22, cacheSeconds: GOOGLE_CACHE_SECONDS, cacheDir: null },
+      tile: { kind: 'xyz', url: googleTileUrl(session, googleKey), maxZoom: 22, cacheSeconds: GOOGLE_CACHE_SECONDS, cacheDir: null, replace: true },
       attribution: `Google${copyright ? ` · ${copyright}` : ''}`,
       problem: null,
     };
@@ -105,7 +105,7 @@ export const useBasemapLayer = (region: Region): BasemapLayer => {
   return {
     basemap,
     // Apple's street names stay over photos (hybrid); maps draw their own (satellite has none).
-    mapType: basemap.labels ? 'hybrid' : 'satellite',
+    mapType: basemap.under ?? (basemap.labels ? 'hybrid' : 'satellite'),
     tile: {
       kind: basemap.kind,
       url,
@@ -113,6 +113,7 @@ export const useBasemapLayer = (region: Region): BasemapLayer => {
       // With an offline package its tiles are used as they are and never asked for again (max age 0).
       cacheSeconds: offlinePackage && canGoOffline(basemap) ? 0 : basemap.cacheSeconds,
       cacheDir: cacheDir(basemap, basemap.id + (dark && basemap.darkUrl ? '-dark' : '')),
+      replace: basemap.replace ?? true,
     },
     attribution: basemap.attribution,
     problem: null,
@@ -126,7 +127,7 @@ const GOOGLE_CACHE_SECONDS = 0;
 export function BasemapTiles({ tile }: { tile: Tile | null }) {
   if (!tile) return null;
   const common = {
-    shouldReplaceMapContent: true,
+    shouldReplaceMapContent: tile.replace,
     maximumZ: 22,
     maximumNativeZ: tile.maxZoom,
     tileSize: 256,

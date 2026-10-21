@@ -6,7 +6,7 @@
 
 export type AppleMapType = 'mutedStandard' | 'standard' | 'satellite' | 'hybrid' | 'satelliteFlyover' | 'hybridFlyover';
 export type KeyName = 'thunderforest' | 'carto' | 'stadia' | 'google';
-export type BasemapGroup = 'apple' | 'open' | 'keyed' | 'aerial' | 'google';
+export type BasemapGroup = 'apple' | 'open' | 'keyed' | 'aerial' | 'city' | 'google';
 
 type Common = { id: string; name: string; group: BasemapGroup };
 
@@ -27,6 +27,10 @@ export type Basemap =
       labels?: boolean;
       /** Its terms allow downloading an area for offline use (open data); most providers forbid it. */
       offline?: boolean;
+      /** Apple's map type underneath, when not the default (hybrid with labels, satellite without). */
+      under?: AppleMapType;
+      /** Tiles cover only part of the world (a city): Apple's map shows where they have none. */
+      replace?: boolean;
     })
   | (Common & { kind: 'google'; mapType: 'roadmap' | 'satellite' | 'terrain'; hybrid: boolean });
 
@@ -42,6 +46,7 @@ export const GROUP_NAMES: Record<BasemapGroup, string> = {
   open: 'Открытые',
   keyed: 'С ключом',
   aerial: 'Аэрофото',
+  city: 'Вроцлав (SIP)',
   google: 'Google',
 };
 
@@ -118,26 +123,13 @@ export const BASEMAPS: Basemap[] = [
     attribution: `Stadia Maps, OpenMapTiles, ${OSM}`,
     cacheSeconds: WEEK,
   },
-  // GUGiK's national orthophoto (25 cm), free since 2020; WMS in Web Mercator.
+  // GUGiK's national orthophoto (25 cm), free for any use since 2020 (AccessConstraints "brak ograniczeń";
+  // the Geoportal terms do not restrict harvesting it, unlike the TOPO service). WMTS: cached tiles, ~0.5 s;
+  // the WMS answered some requests with an empty 404, which left dark squares. Layer ORTOFOTOMAPA,
+  // matrix set EPSG:3857 (since Aug 2021), matrices EPSG:3857:0…19, 256 px.
   {
     id: 'gugik-orto',
     name: 'Ортофото Польши (GUGiK)',
-    group: 'aerial',
-    kind: 'wms',
-    url:
-      'https://mapy.geoportal.gov.pl/wss/service/PZGIK/ORTO/WMS/StandardResolution?SERVICE=WMS&VERSION=1.1.1&REQUEST=GetMap' +
-      '&LAYERS=Raster&STYLES=&SRS=EPSG:3857&BBOX={minX},{minY},{maxX},{maxY}&WIDTH={width}&HEIGHT={height}&FORMAT=image/jpeg',
-    maxZoom: 20,
-    attribution: 'Ortofotomapa: GUGiK, geoportal.gov.pl',
-    cacheSeconds: 30 * 86_400,
-    labels: true,
-    offline: true,
-  },
-  // The same orthophoto through GUGiK's WMTS: cached tiles, so faster than the WMS. Layer ORTOFOTOMAPA,
-  // matrix set EPSG:3857 (added Aug 2021), matrices EPSG:3857:0…19, 256 px.
-  {
-    id: 'gugik-orto-wmts',
-    name: 'Ортофото Польши, WMTS',
     group: 'aerial',
     kind: 'xyz',
     url:
@@ -148,6 +140,47 @@ export const BASEMAPS: Basemap[] = [
     cacheSeconds: 30 * 86_400,
     labels: true,
     offline: true,
+  },
+  // Wrocław's SIP portal (ArcGIS Enterprise): cached tiles in Web Mercator, the standard scheme, so
+  // {z}/{y}/{x} directly; levels to 21; 404 outside the city, where Apple's map shows through.
+  // Orthophoto 2024 (GUGiK's, 5 cm), street names drawn in; its licence: no restrictions.
+  {
+    id: 'wroclaw-orto-2024',
+    name: 'Ортофото 2024 с улицами',
+    group: 'city',
+    kind: 'xyz',
+    url: 'https://gis.um.wroc.pl/portal_srv/rest/services/Ortofotomapa_2024/MapServer/tile/{z}/{y}/{x}',
+    maxZoom: 21,
+    attribution: 'Ortofotomapa 2024 (GUGiK), SIP Wrocław, geoportal.wroclaw.pl',
+    cacheSeconds: 30 * 86_400,
+    under: 'satellite',
+    replace: false,
+    offline: true,
+  },
+  // The city's own base maps; their terms (geoportal.wroclaw.pl) are not read yet, so no offline download.
+  {
+    id: 'wroclaw-grey',
+    name: 'Серая карта города',
+    group: 'city',
+    kind: 'xyz',
+    url: 'https://gis.um.wroc.pl/portal_srv/rest/services/podklad_szary_odniesienie/MapServer/tile/{z}/{y}/{x}',
+    maxZoom: 21,
+    attribution: 'Mapy SIP Wrocławia, geoportal.wroclaw.pl',
+    cacheSeconds: 30 * 86_400,
+    under: 'mutedStandard',
+    replace: false,
+  },
+  {
+    id: 'wroclaw-colour',
+    name: 'Цветная карта города',
+    group: 'city',
+    kind: 'xyz',
+    url: 'https://gis.um.wroc.pl/portal_srv/rest/services/podklad_mocny_odniesienie/MapServer/tile/{z}/{y}/{x}',
+    maxZoom: 21,
+    attribution: 'Mapy SIP Wrocławia, geoportal.wroclaw.pl',
+    cacheSeconds: 30 * 86_400,
+    under: 'mutedStandard',
+    replace: false,
   },
   { id: 'google-roadmap', name: 'Карта', group: 'google', kind: 'google', mapType: 'roadmap', hybrid: false },
   { id: 'google-satellite', name: 'Спутник', group: 'google', kind: 'google', mapType: 'satellite', hybrid: false },
