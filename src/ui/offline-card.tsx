@@ -14,6 +14,12 @@ const ZOOMS = [15, 16, 17, 18];
 /** Beyond this the download would take hours and gigabytes: pick a smaller area or zoom. */
 const MAX_TILES = 60_000;
 
+/** WMS tiles are rendered per request, ~1.5 s each, two at a time. */
+const duration = (tiles: number) => {
+  const minutes = Math.ceil((tiles * 1.5) / 2 / 60);
+  return minutes < 90 ? `${minutes} мин` : `${Math.round(minutes / 60)} ч`;
+};
+
 const megabytes = (bytes: number) => (bytes >= 1e9 ? `${(bytes / 1e9).toFixed(1)} ГБ` : `${Math.max(1, Math.round(bytes / 1e6))} МБ`);
 
 /** Offline download for the chosen base layer, on the Lines screen, when its terms allow it. */
@@ -33,7 +39,7 @@ export function OfflineCard() {
   if (!canGoOffline(basemap)) {
     return (
       <Text style={[styles.note, { color: theme.muted }]}>
-        Офлайн-загрузка есть только у подложек, чьи условия её разрешают: ортофото GUGiK и ортофото Вроцлава 2024. OSM, Thunderforest,
+        Офлайн-загрузка есть только у подложек, чьи условия её разрешают: ортофото Польши HD и ортофото Вроцлава 2024. OSM, Thunderforest,
         CARTO, Stadia и Google запрещают массовую загрузку или требуют платный тариф; условия городских карт SIP ещё не прочитаны.
       </Text>
     );
@@ -48,7 +54,9 @@ export function OfflineCard() {
     if (!box) return;
     Alert.alert(
       'Загрузить офлайн?',
-      `${tiles.toLocaleString('ru')} плиток, около ${megabytes(tiles * BYTES_PER_TILE)}. Лучше по Wi-Fi; держите приложение открытым. Уже скачанное не загружается заново.`,
+      `${tiles.toLocaleString('ru')} плиток, около ${megabytes(tiles * BYTES_PER_TILE)}.` +
+        (basemap.kind === 'wms' ? ` Сервер собирает каждую плитку на лету: займёт около ${duration(tiles)}.` : '') +
+        ' Лучше по Wi-Fi; держите приложение открытым. Уже скачанное не загружается заново.',
       [
         { text: 'Отмена', style: 'cancel' },
         { text: 'Загрузить', onPress: () => void start(basemap, box, maxZ) },

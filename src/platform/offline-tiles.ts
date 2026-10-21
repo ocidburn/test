@@ -47,6 +47,15 @@ const writePackage = (pkg: OfflinePackage) => {
   file.write(JSON.stringify(pkg));
 };
 
+/** Tiles of layers that are gone (replaced or dropped): their packages and caches are dead weight. */
+export const removeOrphans = (keep: Set<string>) => {
+  const root = new Directory(Paths.document, 'tiles');
+  if (!root.exists) return;
+  for (const entry of root.list()) {
+    if (entry instanceof Directory && !keep.has(entry.name)) entry.delete();
+  }
+};
+
 export const deletePackage = (id: string) => {
   const dir = tileDirectory(id);
   if (dir.exists) dir.delete();

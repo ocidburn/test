@@ -2,7 +2,7 @@ import { create } from 'zustand';
 
 import { BASEMAPS, canGoOffline, tileTemplate, type Basemap } from '../core/map/basemaps';
 import type { LonLatBox } from '../core/map/tiles';
-import { deletePackage, downloadPackage, readPackage, type OfflinePackage, type Progress } from '../platform/offline-tiles';
+import { deletePackage, downloadPackage, readPackage, removeOrphans, type OfflinePackage, type Progress } from '../platform/offline-tiles';
 import { useBasemap } from './basemap';
 
 /** The smallest zoom saved: below it a city is a few pixels anyway. */
@@ -21,6 +21,11 @@ type OfflineState = {
 
 const loadPackages = () => {
   const packages: Record<string, OfflinePackage> = {};
+  try {
+    removeOrphans(new Set(BASEMAPS.filter(canGoOffline).map((b) => b.id)));
+  } catch {
+    // Left for the next launch.
+  }
   for (const basemap of BASEMAPS.filter(canGoOffline)) {
     const pkg = readPackage(basemap.id);
     if (pkg) packages[basemap.id] = pkg;

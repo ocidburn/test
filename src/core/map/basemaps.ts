@@ -123,19 +123,21 @@ export const BASEMAPS: Basemap[] = [
     attribution: `Stadia Maps, OpenMapTiles, ${OSM}`,
     cacheSeconds: WEEK,
   },
-  // GUGiK's national orthophoto (25 cm), free for any use since 2020 (AccessConstraints "brak ograniczeń";
-  // the Geoportal terms do not restrict harvesting it, unlike the TOPO service). WMTS: cached tiles, ~0.5 s;
-  // the WMS answered some requests with an empty 404, which left dark squares. Layer ORTOFOTOMAPA,
-  // matrix set EPSG:3857 (since Aug 2021), matrices EPSG:3857:0…19, 256 px.
+  // GUGiK's HighResolution orthophoto (5–25 cm, the newest flights), free for any use since 2020 (capabilities:
+  // "brak ograniczeń"; the Geoportal terms do not restrict harvesting the orthophoto, unlike the TOPO service).
+  // Its WMTS has only EPSG:2180/4326 matrix sets, but its WMS reprojects a GetMap in EPSG:3857 although the
+  // capabilities do not list it: checked against Wrocław's 2024 orthophoto, the same image to the pixel.
+  // Rendered per request, 0.6–7 s a tile. The faster StandardResolution WMTS was dropped: an older, blurrier
+  // mosaic; in Wrocław the city's cached 2024 tiles below are this same image.
   {
-    id: 'gugik-orto',
-    name: 'Ортофото Польши (GUGiK)',
+    id: 'gugik-orto-hd',
+    name: 'Ортофото Польши HD (GUGiK)',
     group: 'aerial',
-    kind: 'xyz',
+    kind: 'wms',
     url:
-      'https://mapy.geoportal.gov.pl/wss/service/PZGIK/ORTO/WMTS/StandardResolution?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0' +
-      '&LAYER=ORTOFOTOMAPA&STYLE=default&FORMAT=image/jpeg&TILEMATRIXSET=EPSG:3857&TILEMATRIX=EPSG:3857:{z}&TILEROW={y}&TILECOL={x}',
-    maxZoom: 19,
+      'https://mapy.geoportal.gov.pl/wss/service/PZGIK/ORTO/WMS/HighResolution?SERVICE=WMS&VERSION=1.1.1&REQUEST=GetMap' +
+      '&LAYERS=Raster&STYLES=&SRS=EPSG:3857&BBOX={minX},{minY},{maxX},{maxY}&WIDTH={width}&HEIGHT={height}&FORMAT=image/jpeg',
+    maxZoom: 21,
     attribution: 'Ortofotomapa: GUGiK, geoportal.gov.pl',
     cacheSeconds: 30 * 86_400,
     labels: true,
@@ -143,7 +145,8 @@ export const BASEMAPS: Basemap[] = [
   },
   // Wrocław's SIP portal (ArcGIS Enterprise): cached tiles in Web Mercator, the standard scheme, so
   // {z}/{y}/{x} directly; levels to 21; 404 outside the city, where Apple's map shows through.
-  // Orthophoto 2024 (GUGiK's, 5 cm), street names drawn in; its licence: no restrictions.
+  // Orthophoto 2024 (GUGiK's, 5 cm, the same image as the HD layer here, but cached: fast), street names
+  // drawn in; its licence: no restrictions.
   {
     id: 'wroclaw-orto-2024',
     name: 'Ортофото 2024 с улицами',
