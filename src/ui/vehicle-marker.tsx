@@ -15,6 +15,14 @@ const TRAIL_STEP = 6;
 const SELECTED_RIM = '#FFD60A';
 /** How long a marker takes to glide to its new position. Polls are 10 s apart. */
 export const MOVE_MS = 3000;
+
+/**
+ * Which way the map is turned (camera heading, degrees clockwise from north).
+ * Map annotations stay upright when the map rotates, so every marker turns
+ * its point by this much less; shared, and set without animation, so the
+ * points follow a rotation gesture as it happens.
+ */
+export const mapHeading = new Animated.Value(0);
 /** Further than this between two polls is a GPS jump or a source switch: no glide. */
 const TELEPORT_METERS = 1000;
 
@@ -124,7 +132,10 @@ export const VehicleMarker = memo(function VehicleMarker({
   }, [anim, heading]);
 
   const color = lineColor(line, tram);
-  const rotate = anim.rotation.interpolate({ inputRange: [-36_000, 36_000], outputRange: ['-36000deg', '36000deg'] });
+  const rotate = Animated.subtract(anim.rotation, mapHeading).interpolate({
+    inputRange: [-36_000, 36_000],
+    outputRange: ['-36000deg', '36000deg'],
+  });
 
   return (
     <AnimatedMarker

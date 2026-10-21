@@ -22,7 +22,7 @@ import { StatusBanner } from '../ui/status-banner';
 import { lineColor, useTheme } from '../ui/theme';
 import { VehicleCard } from '../ui/vehicle-card';
 import { useNow } from '../ui/use-now';
-import { VehicleMarker } from '../ui/vehicle-marker';
+import { mapHeading as mapHeadingValue, MOVE_MS, VehicleMarker } from '../ui/vehicle-marker';
 
 const WROCLAW: Region = { latitude: 51.1079, longitude: 17.0385, latitudeDelta: 0.09, longitudeDelta: 0.09 };
 /** Beyond this many drops in view (with no line filter) the map asks to zoom in. */
@@ -69,6 +69,11 @@ export default function MapScreen() {
   const [stops, setStops] = useState<MapStop[]>([]);
   const [located, setLocated] = useState(false);
   const [mapSize, setMapSize] = useState({ width: 0, height: 0 });
+  /** Camera heading, degrees clockwise from north: the map can be turned with two fingers. */
+  const [heading, setHeading] = useState(0);
+  // Following is tied to the vehicle it was turned on for: a new selection, or none, ends it.
+  const [followId, setFollowId] = useState<string | null>(null);
+  const headingBusy = useRef(false);
   const basemap = useBasemapLayer(region);
   const setViewBox = useMapView((state) => state.setBox);
   useEffect(() => {
@@ -127,17 +132,19 @@ export default function MapScreen() {
   // projected with the visible span, which is close enough at city scale.
   const offsets = useMemo(() => {
     if (dots || !mapSize.width || !mapSize.height) return new Map<string, Offset>();
-    const left = region.longitude - region.longitudeDelta / 2;
-    const top = region.latitude + region.latitudeDelta / 2;
+    // Screen positions north-up, then turned with the map, since the offsets are in screen points.
+    const rad = (heading * Math.PI) / 180;
+    const cos = Math.cos(rad);
+    const sin = Math.sin(rad);
     return spreadPoints(
-      shown.map((v) => ({
-        id: v.id,
-        x: ((v.lon - left) / region.longitudeDelta) * mapSize.width,
-        y: ((top - v.lat) / region.latitudeDelta) * mapSize.height,
-      })),
+      shown.map((v) => {
+        const x = ((v.lon - region.longitude) / region.longitudeDelta) * mapSize.width;
+        const y = ((region.latitude - v.lat) / region.latitudeDelta) * mapSize.height;
+        return { id: v.id, x: x * cos + y * sin, y: -x * sin + y * cos };
+      }),
       SPREAD_POINTS,
     );
-  }, [dots, mapSize, region, shown]);
+  }, [dots, mapSize, region, shown, heading]);
 
   // The delay layer: each shown vehicle's run, once per poll. Kłosok carries
   // its delay; MPK runs are inferred, and no ring is drawn when none is found.
@@ -242,6 +249,32 @@ export default function MapScreen() {
   // A vehicle that dropped out of the feed takes its route off the map with it,
   // and a route still loading for a newly tapped line is not shown under the wrong vehicle.
   const shownRoute = selected && route?.line === selected.line ? route : null;
+
+  // Following: the camera glides to the vehicle with each new position, as the marker does.
+  const following = followId !== null && followId === selectedId;
+  const followLat = following ? selected?.lat : undefined;
+  const followLon = following ? selected?.lon : undefined;
+  useEffect(() => {
+    if (followLat === undefined || followLon === undefined) return;
+    mapRef.current?.animateCamera({ center: { latitude: followLat, longitude: followLon } }, { duration: MOVE_MS });
+  }, [followLat, followLon]);
+
+  /** Read the camera's heading while the map moves (one read at a time). */
+  const readHeading = () => {
+    if (headingBusy.current) return;
+    headingBusy.current = true;
+    mapRef.current
+      ?.getCamera()
+      .then((camera) => {
+        const next = ((camera.heading % 360) + 360) % 360;
+        mapHeadingValue.setValue(next);
+        setHeading(next);
+      })
+      .catch(() => {})
+      .finally(() => {
+        headingBusy.current = false;
+      });
+  };
   const selectedRun = selected && run?.id === String(selectedId) ? run.run : null;
   const along = useMemo(() => {
     if (!shownRoute || !selected) return null;
@@ -277,7 +310,20 @@ export default function MapScreen() {
         style={StyleSheet.absoluteFill}
         onLayout={(event) => setMapSize({ width: event.nativeEvent.layout.width, height: event.nativeEvent.layout.height })}
         initialRegion={WROCLAW}
-        onRegionChangeComplete={setRegion}
+        onRegionChange={(next, details) => {
+          readHeading();
+          // Dragging the map away from the followed vehicle ends following; turning it does not.
+          if (details?.isGesture && following && selected) {
+            const away =
+              Math.abs(next.latitude - selected.lat) > next.latitudeDelta * 0.15 ||
+              Math.abs(next.longitude - selected.lon) > next.longitudeDelta * 0.15;
+            if (away) setFollowId(null);
+          }
+        }}
+        onRegionChangeComplete={(next) => {
+          setRegion(next);
+          readHeading();
+        }}
         onPress={(event) => {
           // On iOS a marker tap also reaches the map; only a tap on the map itself deselects.
           if (event.nativeEvent.action === 'marker-press') return;
@@ -288,7 +334,9 @@ export default function MapScreen() {
         showsBuildings={false}
         // Apple's 3D views need a tilted camera; elsewhere the map stays flat.
         pitchEnabled={threeD}
-        rotateEnabled={false}
+        rotateEnabled
+        // Our own north button (below) stands in for Apple's compass, which would sit under the top buttons.
+        showsCompass={false}
         mapType={basemap.mapType}
         toolbarEnabled={false}
       >
@@ -415,6 +463,19 @@ export default function MapScreen() {
 
       <BasemapAttribution layer={basemap} bottom={insets.bottom + 26} />
       <View style={[styles.bottom, { paddingBottom: insets.bottom + 12 }]} pointerEvents="box-none">
+        {Math.min(heading, 360 - heading) > 1 ? (
+          <Pressable
+            onPress={() => mapRef.current?.animateCamera({ heading: 0 }, { duration: 400 })}
+            style={[styles.round, { backgroundColor: theme.surface }]}
+            accessibilityLabel="Север вверх"
+          >
+            {/* The needle points to north on the turned map. */}
+            <View style={[styles.needle, { transform: [{ rotate: `${-heading}deg` }] }]}>
+              <Text style={styles.needleNorth}>▲</Text>
+              <Text style={[styles.needleLetter, { color: theme.text }]}>N</Text>
+            </View>
+          </Pressable>
+        ) : null}
         <Pressable onPress={locate} style={[styles.round, { backgroundColor: theme.surface }]} accessibilityLabel="Где я">
           <Text style={{ color: theme.accent, fontSize: 20 }}>➤</Text>
         </Pressable>
@@ -426,6 +487,8 @@ export default function MapScreen() {
             nextStopEtaSeconds={selectedRun?.nextStop?.etaSeconds ?? null}
             delaySeconds={selected.delaySeconds ?? selectedRun?.delaySeconds ?? null}
             now={now}
+            following={following}
+            onToggleFollow={() => setFollowId(following ? null : selectedId)}
             onClose={() => setSelectedId(null)}
           />
         ) : null}
@@ -491,6 +554,9 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     shadowOffset: { width: 0, height: 2 },
   },
+  needle: { alignItems: 'center' },
+  needleNorth: { color: '#DC2626', fontSize: 14, lineHeight: 14 },
+  needleLetter: { fontSize: 11, fontWeight: '700', lineHeight: 12 },
   stop: { width: 10, height: 10, borderRadius: 5, backgroundColor: '#FFFFFF', borderWidth: 2, borderColor: '#5F6670' },
   routeStop: { width: 12, height: 12, borderRadius: 6, backgroundColor: '#FFFFFF', borderWidth: 3 },
 });

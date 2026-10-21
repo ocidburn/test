@@ -32,6 +32,8 @@ export function VehicleCard({
   nextStopEtaSeconds,
   delaySeconds,
   now,
+  following,
+  onToggleFollow,
   onClose,
 }: {
   vehicle: LiveVehicle;
@@ -43,6 +45,9 @@ export function VehicleCard({
   /** The feed's delay, or the one worked out from the schedule. Null when unknown. */
   delaySeconds: number | null;
   now: number;
+  /** The map keeps this vehicle in the middle. */
+  following: boolean;
+  onToggleFollow: () => void;
   onClose: () => void;
 }) {
   const theme = useTheme();
@@ -69,6 +74,17 @@ export function VehicleCard({
             </Text>
           ) : null}
         </View>
+        <Pressable
+          onPress={onToggleFollow}
+          hitSlop={8}
+          accessibilityLabel={following ? 'Не следить' : 'Следить'}
+          accessibilityState={{ selected: following }}
+          style={[styles.follow, { borderColor: theme.accent, backgroundColor: following ? theme.accent : 'transparent' }]}
+        >
+          <Text style={{ color: following ? '#FFFFFF' : theme.accent, fontSize: 13, fontWeight: '600' }}>
+            {following ? '◎ Следим' : '◎ Следить'}
+          </Text>
+        </Pressable>
         <Pressable onPress={onClose} hitSlop={12} accessibilityLabel="Закрыть">
           <Text style={[styles.close, { color: theme.muted }]}>✕</Text>
         </Pressable>
@@ -98,4 +114,5 @@ const styles = StyleSheet.create({
   sub: { fontSize: 13 },
   delay: { fontSize: 15, fontWeight: '600' },
   close: { fontSize: 18, fontWeight: '600', paddingHorizontal: 4 },
+  follow: { borderWidth: 1.5, borderRadius: 14, paddingHorizontal: 10, paddingVertical: 5 },
 });
