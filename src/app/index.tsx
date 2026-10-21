@@ -8,8 +8,9 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { getStopsInBBox, getVariants, getVariantStops, type MapStop } from '../core/gtfs/map-queries';
 import { inBBox, type BBox } from '../core/geo';
 import { matchVariant, nextStop, stopsAlong, type Variant } from '../core/realtime/route-match';
-import type { RunDescription } from '../core/realtime/trip-match';
+import { delayStatus, type RunDescription } from '../core/realtime/trip-match';
 import type { LiveVehicle } from '../core/realtime/types';
+import { spreadPoints, type Offset } from '../core/spread';
 import { buildActiveOn, describeVehicle } from '../platform/describe';
 import { useFavorites } from '../state/favorites';
 import { startLive, stopLive, useLive } from '../state/live';
@@ -25,6 +26,11 @@ const WROCLAW: Region = { latitude: 51.1079, longitude: 17.0385, latitudeDelta: 
 const MAX_MARKERS = 220;
 /** Stops appear once zoomed in this far. */
 const STOPS_DELTA = 0.022;
+/** Zoomed out further than this, vehicles are small dots. */
+const DOTS_DELTA = 0.05;
+/** Drop markers closer than this on screen (points) are spread apart. */
+const SPREAD_POINTS = 34;
+const NO_OFFSET: Offset = { dx: 0, dy: 0 };
 
 const regionBox = (region: Region, margin = 0.15): BBox => ({
   minLat: region.latitude - region.latitudeDelta * (0.5 + margin),
@@ -49,6 +55,7 @@ export default function MapScreen() {
   const status = useLive((state) => state.status);
   const filter = useLive((state) => state.filter);
   const favorites = useFavorites((state) => state.stops);
+  const showDelays = useLive((state) => state.showDelays);
 
   const [region, setRegion] = useState<Region>(WROCLAW);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -56,6 +63,8 @@ export default function MapScreen() {
   const [run, setRun] = useState<{ id: string; run: RunDescription | null } | null>(null);
   const [stops, setStops] = useState<MapStop[]>([]);
   const [located, setLocated] = useState(false);
+  const [mapSize, setMapSize] = useState({ width: 0, height: 0 });
+  const [delays, setDelays] = useState<Map<string, number | null>>(() => new Map());
   const variantsCache = useRef(new Map<string, Variant[]>());
   const now = useNow(5_000);
 
@@ -89,7 +98,52 @@ export default function MapScreen() {
   );
   const tooMany = filterSet.size === 0 && inView.length > MAX_MARKERS;
   const selected = vehicles.find((v) => v.id === selectedId) ?? null;
-  const shown: LiveVehicle[] = tooMany ? (selected ? [selected] : []) : inView;
+  const shown: LiveVehicle[] = useMemo(
+    () => (tooMany ? (selected ? [selected] : []) : inView),
+    [tooMany, selected, inView],
+  );
+  const dots = region.latitudeDelta > DOTS_DELTA;
+
+  // Drawn offsets that keep drop markers from piling up. Positions are
+  // projected with the visible span, which is close enough at city scale.
+  const offsets = useMemo(() => {
+    if (dots || !mapSize.width || !mapSize.height) return new Map<string, Offset>();
+    const left = region.longitude - region.longitudeDelta / 2;
+    const top = region.latitude + region.latitudeDelta / 2;
+    return spreadPoints(
+      shown.map((v) => ({
+        id: v.id,
+        x: ((v.lon - left) / region.longitudeDelta) * mapSize.width,
+        y: ((top - v.lat) / region.latitudeDelta) * mapSize.height,
+      })),
+      SPREAD_POINTS,
+    );
+  }, [dots, mapSize, region, shown]);
+
+  // The delay layer: each shown vehicle's run, once per poll. Kłosok carries
+  // its delay; MPK runs are inferred, and no ring is drawn when none is found.
+  useEffect(() => {
+    if (!showDelays || !db || !shown.length) return;
+    let cancelled = false;
+    (async () => {
+      const now = Date.now();
+      const activeOn = await buildActiveOn(db, now);
+      const next = new Map<string, number | null>();
+      for (const vehicle of shown) {
+        if (cancelled) return;
+        if (vehicle.delaySeconds !== null) {
+          next.set(vehicle.id, vehicle.delaySeconds);
+          continue;
+        }
+        const description = await describeVehicle(db, vehicle, now, activeOn);
+        next.set(vehicle.id, description?.run?.delaySeconds ?? null);
+      }
+      if (!cancelled) setDelays(next);
+    })().catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [showDelays, db, shown]);
 
   // Stops in view once zoomed in.
   useEffect(() => {
@@ -187,6 +241,7 @@ export default function MapScreen() {
       <MapView
         ref={mapRef}
         style={StyleSheet.absoluteFill}
+        onLayout={(event) => setMapSize({ width: event.nativeEvent.layout.width, height: event.nativeEvent.layout.height })}
         initialRegion={WROCLAW}
         onRegionChangeComplete={setRegion}
         onPress={(event) => {
@@ -239,19 +294,28 @@ export default function MapScreen() {
               </Marker>
             ))
           : null}
-        {shown.map((vehicle) => (
-          <VehicleMarker
-            key={vehicle.id}
-            id={vehicle.id}
-            line={vehicle.line}
-            tram={vehicle.tram}
-            lat={vehicle.lat}
-            lon={vehicle.lon}
-            heading={vehicle.heading}
-            selected={vehicle.id === selectedId}
-            onSelect={setSelectedId}
-          />
-        ))}
+        {shown.map((vehicle) => {
+          const isSelected = vehicle.id === selectedId;
+          const offset = offsets.get(vehicle.id) ?? NO_OFFSET;
+          return (
+            <VehicleMarker
+              key={vehicle.id}
+              id={vehicle.id}
+              line={vehicle.line}
+              tram={vehicle.tram}
+              lat={vehicle.lat}
+              lon={vehicle.lon}
+              heading={vehicle.heading}
+              selected={isSelected}
+              // The selected vehicle keeps its number even when zoomed out.
+              look={dots && !isSelected ? 'dot' : 'drop'}
+              delay={showDelays ? delayStatus(delays.get(vehicle.id) ?? vehicle.delaySeconds) : 'none'}
+              offsetX={offset.dx}
+              offsetY={offset.dy}
+              onSelect={setSelectedId}
+            />
+          );
+        })}
       </MapView>
 
       <View style={[styles.top, { paddingTop: insets.top + 8 }]} pointerEvents="box-none">

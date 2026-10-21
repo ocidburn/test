@@ -11,6 +11,7 @@ import { useTimetable } from './timetable';
 
 const POLL_MS = 10_000;
 const FILTER_KEY = 'live.lineFilter';
+const DELAYS_KEY = 'live.showDelays';
 
 const readFilter = (): string[] => {
   try {
@@ -18,6 +19,14 @@ const readFilter = (): string[] => {
     return raw ? (JSON.parse(raw) as string[]) : [];
   } catch {
     return [];
+  }
+};
+
+const readDelays = (): boolean => {
+  try {
+    return Storage.getItemSync(DELAYS_KEY) === '1';
+  } catch {
+    return false;
   }
 };
 
@@ -29,6 +38,9 @@ type LiveState = {
   /** Lines shown on the map; empty means all. */
   filter: string[];
   polling: boolean;
+  /** The delay layer: markers ringed by how late their run is. */
+  showDelays: boolean;
+  setShowDelays: (on: boolean) => void;
   toggleLine: (line: string) => void;
   setFilter: (lines: string[]) => void;
 };
@@ -40,6 +52,15 @@ export const useLive = create<LiveState>((set, get) => ({
   lines: [],
   filter: readFilter(),
   polling: false,
+  showDelays: readDelays(),
+  setShowDelays: (showDelays) => {
+    set({ showDelays });
+    try {
+      Storage.setItemSync(DELAYS_KEY, showDelays ? '1' : '0');
+    } catch {
+      // The layer just will not survive a restart.
+    }
+  },
   toggleLine: (line) => {
     const current = get().filter;
     get().setFilter(current.includes(line) ? current.filter((l) => l !== line) : [...current, line]);
