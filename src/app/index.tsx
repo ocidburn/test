@@ -15,6 +15,7 @@ import { buildActiveOn, describeVehicle } from '../platform/describe';
 import { useFavorites } from '../state/favorites';
 import { startLive, stopLive, useLive } from '../state/live';
 import { useTimetable } from '../state/timetable';
+import { BasemapAttribution, BasemapTiles, useBasemapLayer } from '../ui/basemap-layer';
 import { StatusBanner } from '../ui/status-banner';
 import { lineColor, useTheme } from '../ui/theme';
 import { VehicleCard } from '../ui/vehicle-card';
@@ -66,6 +67,7 @@ export default function MapScreen() {
   const [stops, setStops] = useState<MapStop[]>([]);
   const [located, setLocated] = useState(false);
   const [mapSize, setMapSize] = useState({ width: 0, height: 0 });
+  const basemap = useBasemapLayer(region);
   const [delays, setDelays] = useState<Map<string, number | null>>(() => new Map());
   const variantsCache = useRef(new Map<string, Variant[]>());
   const now = useNow(5_000);
@@ -267,9 +269,10 @@ export default function MapScreen() {
         showsBuildings={false}
         pitchEnabled={false}
         rotateEnabled={false}
-        mapType="mutedStandard"
+        mapType={basemap.mapType}
         toolbarEnabled={false}
       >
+        <BasemapTiles tile={basemap.tile} />
         {shownRoute ? (
           <Polyline
             coordinates={shownRoute.variant.points.map((p) => ({ latitude: p.lat, longitude: p.lon }))}
@@ -390,6 +393,7 @@ export default function MapScreen() {
         </View>
       </View>
 
+      <BasemapAttribution layer={basemap} bottom={insets.bottom + 26} />
       <View style={[styles.bottom, { paddingBottom: insets.bottom + 12 }]} pointerEvents="box-none">
         <Pressable onPress={locate} style={[styles.round, { backgroundColor: theme.surface }]} accessibilityLabel="Где я">
           <Text style={{ color: theme.accent, fontSize: 20 }}>➤</Text>

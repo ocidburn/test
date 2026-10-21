@@ -7,6 +7,7 @@ import { useLive } from '../state/live';
 import { useTimetable } from '../state/timetable';
 import { ComparisonLog } from '../ui/comparison-log';
 import { ImpkSettings } from '../ui/impk-settings';
+import { MapKeys } from '../ui/map-keys';
 import { StatusBanner } from '../ui/status-banner';
 import { useTheme } from '../ui/theme';
 import { useNow } from '../ui/use-now';
@@ -154,6 +155,8 @@ export default function SettingsScreen() {
       <ComparisonLog />
       <Text style={[styles.section, { color: theme.muted }]}>IMPK</Text>
       <ImpkSettings />
+      <Text style={[styles.section, { color: theme.muted }]}>КЛЮЧИ КАРТ</Text>
+      <MapKeys />
       <Pressable
         disabled={!!activity}
         onPress={() => void update({ force: true })}
