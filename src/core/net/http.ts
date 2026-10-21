@@ -14,6 +14,8 @@ export class HttpError extends Error {
   constructor(
     message: string,
     readonly status: number,
+    /** The failed response's headers: a 401 carries its auth challenge here. */
+    readonly headers: Headers | null = null,
   ) {
     super(message);
     this.name = 'HttpError';
@@ -42,7 +44,7 @@ export const request = async <T>(
       signal: controller.signal,
       headers: { 'User-Agent': USER_AGENT, ...(headers as Record<string, string> | undefined) },
     });
-    if (!response.ok) throw new HttpError(`HTTP ${response.status} ${response.statusText}`.trim(), response.status);
+    if (!response.ok) throw new HttpError(`HTTP ${response.status} ${response.statusText}`.trim(), response.status, response.headers);
     return await read(response);
   } catch (error) {
     if (controller.signal.aborted && !signal?.aborted) {

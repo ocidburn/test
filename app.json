@@ -38,7 +38,13 @@
           "isIosBackgroundLocationEnabled": false
         }
       ],
-      "./plugins/without-push-entitlement"
+      "./plugins/without-push-entitlement",
+      [
+        "expo-secure-store",
+        {
+          "faceIDPermission": false
+        }
+      ]
     ],
     "platforms": [
       "ios"

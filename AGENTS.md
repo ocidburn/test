@@ -35,6 +35,10 @@ Run lint, typecheck and tests before committing.
   After touching native dependencies, prebuild and check `ios/*/*.entitlements` is an empty dict.
 - Live sources fail independently; a failure is reported in its `SourceStatus`, never by emptying the map.
   `bus_position` answers `200 []` to a body it does not understand — that is an error, not "no vehicles".
+- iMPK (`src/core/realtime/impk.ts`) is used with MPK's permission and the user's own login, typed in
+  on the Data screen: never commit credentials. The password lives in the Keychain (expo-secure-store),
+  the rest in kv-store. Plain HTTPS with normal certificate checks; never weaken TLS or ATS for it.
+  fetch() does not answer Digest challenges, so `src/core/net/digest.ts` does.
 - The GTFS-RT decoder is hand-written (`src/core/realtime/gtfs-rt.ts`); protobufjs is a dev dependency for tests only.
 - A vehicle's direction comes from `matchVariant` (distance + heading), never from distance alone.
 - MPK carries no trip id or delay; the run is inferred in `src/core/realtime/trip-match.ts` by

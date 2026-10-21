@@ -5,6 +5,7 @@ import { lastCheckedAt } from '../platform/timetable';
 import type { SourceDetail } from '../core/realtime/types';
 import { useLive } from '../state/live';
 import { useTimetable } from '../state/timetable';
+import { ImpkSettings } from '../ui/impk-settings';
 import { StatusBanner } from '../ui/status-banner';
 import { useTheme } from '../ui/theme';
 import { useNow } from '../ui/use-now';
@@ -97,7 +98,7 @@ export default function SettingsScreen() {
   ];
 
   return (
-    <ScrollView contentContainerStyle={styles.content}>
+    <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled" automaticallyAdjustKeyboardInsets>
       <StatusBanner />
       <View style={[styles.card, { backgroundColor: theme.surface }]}>
         {rows.map(([label, value]) => (
@@ -139,6 +140,8 @@ export default function SettingsScreen() {
           );
         })}
       </View>
+      <Text style={[styles.section, { color: theme.muted }]}>IMPK</Text>
+      <ImpkSettings />
       <Pressable
         disabled={!!activity}
         onPress={() => void update({ force: true })}
