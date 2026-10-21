@@ -35,12 +35,14 @@
     "gtfs-realtime-bindings": "^1.1.1",
     "jest": "^30.5.2",
     "jest-expo": "~58.0.11",
+    "patch-package": "^8.0.1",
     "react-dom": "^19.3.0",
     "react-test-renderer": "^19.3.0",
     "sql.js": "^1.15.1",
     "typescript": "~6.0.3"
   },
   "scripts": {
+    "postinstall": "patch-package",
     "start": "expo start",
     "android": "expo run:android",
     "ios": "expo run:ios",

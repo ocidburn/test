@@ -125,11 +125,8 @@ const GOOGLE_CACHE_SECONDS = 0;
 
 /**
  * The tile overlay for a layer; Apple's map stays underneath only where no tile has loaded.
- *
- * MapKit draws nothing (its grey grid, under a layer that replaces the map) where a tile of the new zoom
- * level is still on its way. A second overlay underneath, reading the same cache in offline mode, fills
- * that gap at once: react-native-maps then serves the nearest of up to four lower zoom levels it has on the
- * phone, cropped and scaled up. Blurry for the moment it shows, then the sharp tile covers it.
+ * While a new zoom level loads, the renderer (patches/react-native-maps…) draws what this cache holds
+ * for the place at other levels, so the map shows a blurrier picture instead of MapKit's grey grid.
  */
 export function BasemapTiles({ tile }: { tile: Tile | null }) {
   if (!tile) return null;
@@ -138,19 +135,11 @@ export function BasemapTiles({ tile }: { tile: Tile | null }) {
     maximumZ: 22,
     maximumNativeZ: tile.maxZoom,
     tileSize: 256,
+    // A max age of 0 keeps cached tiles for good (offline packages); Google's (no cacheDir) are not stored.
+    ...(tile.cacheDir ? { tileCachePath: tile.cacheDir, tileCacheMaxAge: tile.cacheSeconds } : {}),
   };
-  const Overlay = tile.kind === 'wms' ? WMSTile : UrlTile;
   // A new template (dark mode, a renewed Google session) is a new overlay.
-  if (!tile.cacheDir) return <Overlay key={tile.url} urlTemplate={tile.url} {...common} />;
-  // A max age of 0 keeps cached tiles for good (offline packages).
-  const cache = { tileCachePath: tile.cacheDir, tileCacheMaxAge: tile.cacheSeconds };
-  return (
-    <>
-      {/* The same max age: without one, every read here would mark the tile fresh and it would never be renewed. */}
-      <Overlay key={`under-${tile.url}`} urlTemplate={tile.url} {...common} {...cache} offlineMode />
-      <Overlay key={tile.url} urlTemplate={tile.url} {...common} {...cache} />
-    </>
-  );
+  return tile.kind === 'wms' ? <WMSTile key={tile.url} urlTemplate={tile.url} {...common} /> : <UrlTile key={tile.url} urlTemplate={tile.url} {...common} />;
 }
 
 /** The source's credit, which every tile provider here requires on the map. */

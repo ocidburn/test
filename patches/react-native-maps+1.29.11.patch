@@ -1,0 +1,174 @@
+diff --git a/node_modules/react-native-maps/ios/AirMaps/AIRMapTileFallbackRenderer.h b/node_modules/react-native-maps/ios/AirMaps/AIRMapTileFallbackRenderer.h
+new file mode 100644
+index 0000000..b44941d
+--- /dev/null
++++ b/node_modules/react-native-maps/ios/AirMaps/AIRMapTileFallbackRenderer.h
+@@ -0,0 +1,18 @@
++//
++//  AIRMapTileFallbackRenderer.h
++//  AirMaps
++//
++//  Patched in by Wrocław Transit (patches/react-native-maps+1.29.11.patch).
++//
++
++#import <MapKit/MapKit.h>
++
++/**
++ * MKTileOverlayRenderer leaves an empty square (MapKit's grey grid, when the
++ * overlay replaces the map) until the tile of the new zoom level has loaded.
++ * This one draws what the overlay's tile cache already holds for that place
++ * meanwhile: coarser tiles scaled up, finer ones scaled down. Then the real
++ * tile replaces it as before.
++ */
++@interface AIRMapTileFallbackRenderer : MKTileOverlayRenderer
++@end
+diff --git a/node_modules/react-native-maps/ios/AirMaps/AIRMapTileFallbackRenderer.m b/node_modules/react-native-maps/ios/AirMaps/AIRMapTileFallbackRenderer.m
+new file mode 100644
+index 0000000..1e190c5
+--- /dev/null
++++ b/node_modules/react-native-maps/ios/AirMaps/AIRMapTileFallbackRenderer.m
+@@ -0,0 +1,100 @@
++//
++//  AIRMapTileFallbackRenderer.m
++//  AirMaps
++//
++//  Patched in by Wrocław Transit (patches/react-native-maps+1.29.11.patch).
++//
++
++#import "AIRMapTileFallbackRenderer.h"
++#import "AIRMapUrlTileCachedOverlay.h"
++#import <UIKit/UIKit.h>
++
++/** How many levels coarser than the wanted one are looked for in the cache. */
++static const NSInteger kCoarserLevels = 6;
++/** A level that needs more tiles than this for one square is skipped (far too fine to matter). */
++static const NSInteger kMaxTilesPerLevel = 16;
++
++static NSCache<NSString *, UIImage *> *AIRFallbackImageCache(void)
++{
++    static NSCache<NSString *, UIImage *> *cache;
++    static dispatch_once_t once;
++    dispatch_once(&once, ^{
++        cache = [[NSCache alloc] init];
++        cache.countLimit = 300;
++    });
++    return cache;
++}
++
++@implementation AIRMapTileFallbackRenderer
++
++/** The overlay's tile cache folder ({z}/{x}/{y} below it), or nil when it keeps none. */
++- (NSString *)cacheRoot
++{
++    id overlay = self.overlay;
++    if (![overlay isKindOfClass:[AIRMapUrlTileCachedOverlay class]]) return nil;
++    NSURL *root = ((AIRMapUrlTileCachedOverlay *)overlay).tileCachePath;
++    return root.isFileURL ? root.path : nil;
++}
++
++- (UIImage *)cachedTileAtRoot:(NSString *)root z:(NSInteger)z x:(NSInteger)x y:(NSInteger)y
++{
++    NSString *path = [NSString stringWithFormat:@"%@/%ld/%ld/%ld", root, (long)z, (long)x, (long)y];
++    NSCache<NSString *, UIImage *> *cache = AIRFallbackImageCache();
++    UIImage *image = [cache objectForKey:path];
++    if (image) return image;
++    if (![[NSFileManager defaultManager] fileExistsAtPath:path]) return nil;
++    NSData *data = [NSData dataWithContentsOfFile:path];
++    image = data ? [UIImage imageWithData:data] : nil;
++    if (image) [cache setObject:image forKey:path];
++    return image;
++}
++
++- (BOOL)canDrawMapRect:(MKMapRect)mapRect zoomScale:(MKZoomScale)zoomScale
++{
++    // Asking the superclass also starts loading the tile; it redraws the square once the tile is in.
++    BOOL ready = [super canDrawMapRect:mapRect zoomScale:zoomScale];
++    return ready || [self cacheRoot] != nil;
++}
++
++- (void)drawMapRect:(MKMapRect)mapRect zoomScale:(MKZoomScale)zoomScale inContext:(CGContextRef)context
++{
++    if ([super canDrawMapRect:mapRect zoomScale:zoomScale]) {
++        [super drawMapRect:mapRect zoomScale:zoomScale inContext:context];
++        return;
++    }
++    NSString *root = [self cacheRoot];
++    if (!root) return;
++
++    AIRMapUrlTileCachedOverlay *overlay = (AIRMapUrlTileCachedOverlay *)self.overlay;
++    double tileSize = overlay.tileSize.width > 0 ? overlay.tileSize.width : 256.0;
++    NSInteger z = (NSInteger)lround(log2(MKMapSizeWorld.width * zoomScale / tileSize));
++    NSInteger nativeMax = overlay.maximumNativeZ > 0 ? overlay.maximumNativeZ : overlay.maximumZ;
++    NSInteger finest = MIN(z + 1, nativeMax);
++    NSInteger coarsest = MAX(overlay.minimumZ, MIN(z, nativeMax) - kCoarserLevels);
++    if (finest < coarsest) return;
++
++    CGContextSaveGState(context);
++    CGContextClipToRect(context, [self rectForMapRect:mapRect]);
++    UIGraphicsPushContext(context);
++    // Coarse first, finer on top: the sharpest the phone already has wins.
++    for (NSInteger level = coarsest; level <= finest; level++) {
++        double span = MKMapSizeWorld.width / pow(2.0, (double)level);
++        NSInteger x0 = (NSInteger)floor(MKMapRectGetMinX(mapRect) / span);
++        NSInteger x1 = (NSInteger)floor((MKMapRectGetMaxX(mapRect) - 1e-6) / span);
++        NSInteger y0 = (NSInteger)floor(MKMapRectGetMinY(mapRect) / span);
++        NSInteger y1 = (NSInteger)floor((MKMapRectGetMaxY(mapRect) - 1e-6) / span);
++        if ((x1 - x0 + 1) * (y1 - y0 + 1) > kMaxTilesPerLevel) continue;
++        for (NSInteger x = x0; x <= x1; x++) {
++            for (NSInteger y = y0; y <= y1; y++) {
++                UIImage *image = [self cachedTileAtRoot:root z:level x:x y:y];
++                if (!image) continue;
++                MKMapRect tileRect = MKMapRectMake(x * span, y * span, span, span);
++                [image drawInRect:[self rectForMapRect:tileRect]];
++            }
++        }
++    }
++    UIGraphicsPopContext();
++    CGContextRestoreGState(context);
++}
++
++@end
+diff --git a/node_modules/react-native-maps/ios/AirMaps/AIRMapUrlTile.m b/node_modules/react-native-maps/ios/AirMaps/AIRMapUrlTile.m
+index f77f627..0603f24 100644
+--- a/node_modules/react-native-maps/ios/AirMaps/AIRMapUrlTile.m
++++ b/node_modules/react-native-maps/ios/AirMaps/AIRMapUrlTile.m
+@@ -9,6 +9,7 @@
+ #import "AIRMapUrlTile.h"
+ #import <React/UIView+React.h>
+ #import "AIRMapUrlTileCachedOverlay.h"
++#import "AIRMapTileFallbackRenderer.h"
+ 
+ @implementation AIRMapUrlTile 
+ 
+@@ -145,7 +146,8 @@
+ 
+     [self updateProperties];
+ 
+-    self.renderer = [[MKTileOverlayRenderer alloc] initWithTileOverlay:self.tileOverlay];
++    // Draws cached tiles of other zoom levels while the new ones load, instead of an empty square.
++    self.renderer = [[AIRMapTileFallbackRenderer alloc] initWithTileOverlay:self.tileOverlay];
+     if (_opacitySet) {
+         self.renderer.alpha = self.opacity;
+     }
+diff --git a/node_modules/react-native-maps/ios/AirMaps/AIRMapWMSTile.m b/node_modules/react-native-maps/ios/AirMaps/AIRMapWMSTile.m
+index 7c822ce..dfd2f6d 100644
+--- a/node_modules/react-native-maps/ios/AirMaps/AIRMapWMSTile.m
++++ b/node_modules/react-native-maps/ios/AirMaps/AIRMapWMSTile.m
+@@ -8,6 +8,7 @@
+ 
+ #import "AIRMapWMSTile.h"
+ #import <React/UIView+React.h>
++#import "AIRMapTileFallbackRenderer.h"
+ 
+ @implementation AIRMapWMSTile
+ 
+@@ -41,7 +42,8 @@
+ 
+     [self updateProperties];
+ 
+-    self.renderer = [[MKTileOverlayRenderer alloc] initWithTileOverlay:self.tileOverlay];
++    // Draws cached tiles of other zoom levels while the new ones load, instead of an empty square.
++    self.renderer = [[AIRMapTileFallbackRenderer alloc] initWithTileOverlay:self.tileOverlay];
+     if (_opacitySet) {
+         self.renderer.alpha = self.opacity;
+     }

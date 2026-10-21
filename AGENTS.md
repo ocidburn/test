@@ -45,6 +45,9 @@ Run lint, typecheck and tests before committing.
   projecting the position onto the shape and asking which departure would be here now. Beyond
   `MAX_DELAY_SECONDS` (45 min) no run is claimed — never show a guessed delay. Keep the matched
   run's own schedule for ETAs, not a sample trip's.
+- `patches/` holds patch-package patches (applied on `npm install`). react-native-maps' tile renderer is
+  replaced there so a zoom shows cached tiles of other levels instead of MapKit's grey grid; on a
+  react-native-maps upgrade, regenerate the patch (`npx patch-package react-native-maps`).
 - `ios/` and `android/` are generated (`expo prebuild`); configure through `app.json` and plugins.
 - Code ported from wroclaw-mpk-map must come from MIT commit `b11fe19` only, with a header
   note and an entry in NOTICE.
