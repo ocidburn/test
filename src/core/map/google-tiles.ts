@@ -20,15 +20,19 @@ export const createGoogleSession = async (
   { fetchImpl, now = Date.now() }: { fetchImpl?: FetchLike; now?: number } = {},
 ): Promise<GoogleSession> => {
   const body: Record<string, unknown> = { mapType, language, region, highDpi: true, scale: 'scaleFactor2x' };
-  // Satellite with roads and labels on top: Google's hybrid.
-  if (hybrid) body.layerTypes = ['layerRoadmap'];
+  // Satellite with roads and labels on top is Google's hybrid; terrain needs the road layer too.
+  if (hybrid || mapType === 'terrain') body.layerTypes = ['layerRoadmap'];
   const answer = await fetchJson<{ session?: string; expiry?: string | number }>(`${API}/v1/createSession?key=${encodeURIComponent(key)}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
     fetchImpl,
   }).catch((error: unknown) => {
-    // Google answers a bad key or a project without the API with 400/403.
+    // Satellite 2D tiles are not served to projects billed in the EEA (Poland included).
+    if (error instanceof HttpError && error.status === 403 && mapType === 'satellite') {
+      throw new Error('спутник Google недоступен для проектов с оплатой в ЕЭЗ (HTTP 403)');
+    }
+    // A bad key or a project without the API.
     if (error instanceof HttpError && (error.status === 400 || error.status === 403)) {
       throw new Error(`ключ не принят или Map Tiles API не включён в проекте (HTTP ${error.status})`);
     }

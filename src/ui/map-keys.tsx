@@ -8,9 +8,10 @@ import { useTheme } from './theme';
 const NAMES = Object.keys(KEY_NAMES) as KeyName[];
 
 const HINTS: Record<KeyName, string> = {
-  thunderforest: 'thunderforest.com → Account → API key (бесплатный тариф Hobby)',
-  stadia: 'client.stadiamaps.com → свой ключ',
-  google: 'Google Cloud: включить Map Tiles API, создать API-ключ',
+  thunderforest: 'thunderforest.com → Account → API key (бесплатный тариф Hobby, 150 000 плиток в месяц)',
+  carto: 'carto.com/basemaps → бесплатный ключ по e-mail; без ограничения по приложению',
+  stadia: 'client.stadiamaps.com → API key (бесплатно 200 000 плиток в месяц, некоммерческое)',
+  google: 'Google Cloud: включить Map Tiles API, создать ключ; нужна оплата, 100 000 плиток в месяц бесплатно. Спутник Google для ЕЭЗ не отдаётся',
 };
 
 /** API keys for map layers on the Data screen; kept in the Keychain, never shown back. */

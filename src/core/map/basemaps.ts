@@ -5,7 +5,7 @@
  */
 
 export type AppleMapType = 'mutedStandard' | 'standard' | 'satellite' | 'hybrid' | 'satelliteFlyover' | 'hybridFlyover';
-export type KeyName = 'thunderforest' | 'stadia' | 'google';
+export type KeyName = 'thunderforest' | 'carto' | 'stadia' | 'google';
 export type BasemapGroup = 'apple' | 'open' | 'keyed' | 'aerial' | 'google';
 
 type Common = { id: string; name: string; group: BasemapGroup };
@@ -28,6 +28,7 @@ export type Basemap =
 
 export const KEY_NAMES: Record<KeyName, string> = {
   thunderforest: 'Thunderforest',
+  carto: 'CARTO',
   stadia: 'Stadia Maps',
   google: 'Google Map Tiles API',
 };
@@ -42,6 +43,9 @@ export const GROUP_NAMES: Record<BasemapGroup, string> = {
 
 export const DEFAULT_BASEMAP = 'apple-muted';
 
+const WEEK = 7 * 86_400;
+const OSM = 'OpenStreetMap contributors';
+
 export const BASEMAPS: Basemap[] = [
   { id: 'apple-muted', name: 'Приглушённая', group: 'apple', kind: 'apple', mapType: 'mutedStandard' },
   { id: 'apple-standard', name: 'Стандарт', group: 'apple', kind: 'apple', mapType: 'standard' },
@@ -49,6 +53,93 @@ export const BASEMAPS: Basemap[] = [
   { id: 'apple-hybrid', name: 'Гибрид', group: 'apple', kind: 'apple', mapType: 'hybrid' },
   { id: 'apple-satellite-3d', name: 'Спутник 3D', group: 'apple', kind: 'apple', mapType: 'satelliteFlyover' },
   { id: 'apple-hybrid-3d', name: 'Гибрид 3D', group: 'apple', kind: 'apple', mapType: 'hybridFlyover' },
+  // OSM's own server: on demand only (no prefetch), tiles kept a week, as its policy asks.
+  {
+    id: 'osm',
+    name: 'OpenStreetMap',
+    group: 'open',
+    kind: 'xyz',
+    url: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+    maxZoom: 19,
+    attribution: OSM,
+    cacheSeconds: WEEK,
+  },
+  // ÖPNVKarte: public transport lines on an OSM base; free, but a volunteer-run server.
+  {
+    id: 'opnv',
+    name: 'ÖPNVKarte (транспорт)',
+    group: 'open',
+    kind: 'xyz',
+    url: 'https://tileserver.memomaps.de/tilegen/{z}/{x}/{y}.png',
+    maxZoom: 18,
+    attribution: `Map memomaps.de CC-BY-SA, map data ${OSM}`,
+    cacheSeconds: WEEK,
+  },
+  // Thunderforest Transport: Hobby tier, 150 000 tiles a month.
+  {
+    id: 'thunderforest-transport',
+    name: 'Транспорт (Thunderforest)',
+    group: 'keyed',
+    kind: 'xyz',
+    url: 'https://api.thunderforest.com/transport/{z}/{x}/{y}.png?apikey={key}',
+    darkUrl: 'https://api.thunderforest.com/transport-dark/{z}/{x}/{y}.png?apikey={key}',
+    key: 'thunderforest',
+    maxZoom: 22,
+    attribution: `Maps Thunderforest, Data ${OSM}`,
+    cacheSeconds: WEEK,
+  },
+  // CARTO: a key is required since 25 Sep 2026; free non-commercial use up to 5M requests a month.
+  {
+    id: 'carto',
+    name: 'Positron / Dark Matter (CARTO)',
+    group: 'keyed',
+    kind: 'xyz',
+    url: 'https://basemaps.cartocdn.com/rastertiles/light_all/{z}/{x}/{y}.png?key={key}',
+    darkUrl: 'https://basemaps.cartocdn.com/rastertiles/dark_all/{z}/{x}/{y}.png?key={key}',
+    key: 'carto',
+    maxZoom: 20,
+    attribution: `${OSM}, CARTO`,
+    cacheSeconds: WEEK,
+  },
+  // Stadia: free plan, 200 000 tiles a month, non-commercial.
+  {
+    id: 'stadia',
+    name: 'Alidade Smooth (Stadia)',
+    group: 'keyed',
+    kind: 'xyz',
+    url: 'https://tiles.stadiamaps.com/tiles/alidade_smooth/{z}/{x}/{y}.png?api_key={key}',
+    darkUrl: 'https://tiles.stadiamaps.com/tiles/alidade_smooth_dark/{z}/{x}/{y}.png?api_key={key}',
+    key: 'stadia',
+    maxZoom: 20,
+    attribution: `Stadia Maps, OpenMapTiles, ${OSM}`,
+    cacheSeconds: WEEK,
+  },
+  // GUGiK's national orthophoto (25 cm), free since 2020; WMS in Web Mercator.
+  {
+    id: 'gugik-orto',
+    name: 'Ортофото Польши (GUGiK)',
+    group: 'aerial',
+    kind: 'wms',
+    url:
+      'https://mapy.geoportal.gov.pl/wss/service/PZGIK/ORTO/WMS/StandardResolution?SERVICE=WMS&VERSION=1.1.1&REQUEST=GetMap' +
+      '&LAYERS=Raster&STYLES=&SRS=EPSG:3857&BBOX={minX},{minY},{maxX},{maxY}&WIDTH={width}&HEIGHT={height}&FORMAT=image/jpeg',
+    maxZoom: 20,
+    attribution: 'Ortofotomapa: GUGiK, geoportal.gov.pl',
+    cacheSeconds: 30 * 86_400,
+  },
+  // Wrocław's own 5 cm orthophoto, 2024 (licence: no restrictions). Web Mercator not confirmed yet.
+  {
+    id: 'wroclaw-orto',
+    name: 'Ортофото Вроцлава 2024 (проба)',
+    group: 'aerial',
+    kind: 'wms',
+    url:
+      'https://gis1.um.wroc.pl/arcgis/services/ogc/OGC_ortofoto_2024/MapServer/WMSServer?SERVICE=WMS&VERSION=1.1.1&REQUEST=GetMap' +
+      '&LAYERS=0&STYLES=&SRS=EPSG:3857&BBOX={minX},{minY},{maxX},{maxY}&WIDTH={width}&HEIGHT={height}&FORMAT=image/jpeg',
+    maxZoom: 21,
+    attribution: 'Źródło: SIP Wrocław, www.geoportal.wroclaw.pl',
+    cacheSeconds: 30 * 86_400,
+  },
   { id: 'google-roadmap', name: 'Карта', group: 'google', kind: 'google', mapType: 'roadmap', hybrid: false },
   { id: 'google-satellite', name: 'Спутник', group: 'google', kind: 'google', mapType: 'satellite', hybrid: false },
   { id: 'google-hybrid', name: 'Гибрид', group: 'google', kind: 'google', mapType: 'satellite', hybrid: true },
