@@ -6,7 +6,7 @@ import { getLines, getStopNamesByCode, lineSets, timetableResolver, type LineInf
 import { isTramLine } from '../core/lines';
 import { LiveTracker, type SourceName } from '../core/realtime/tracker';
 import type { LiveVehicle, SourceStatus } from '../core/realtime/types';
-import { clearDescribeCache } from '../platform/describe';
+import { clearDescribeCache, routeHeading } from '../platform/describe';
 import { impkClient } from './impk';
 import { useTimetable } from './timetable';
 
@@ -104,6 +104,7 @@ const trackerFor = (db: Db) => {
         resolver: timetableResolver(db),
         impk: impkClient,
         stopNames: () => (stopNames ??= getStopNamesByCode(db)),
+        routeHeading: (line, destination, lat, lon) => routeHeading(db, line, destination, lat, lon),
       }),
     };
   }

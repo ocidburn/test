@@ -57,6 +57,8 @@ export type TrackerDeps = {
   impk?: () => Promise<ImpkClient | null>;
   /** Stop names by post symbol (GTFS stop_code), for iMPK's destinations. */
   stopNames?: () => Promise<Map<string, string>>;
+  /** Bearing of the line's route towards `destination` (a post symbol) at a point; null when unknown. */
+  routeHeading?: (line: string, destination: string, lat: number, lon: number) => Promise<number | null>;
 };
 
 /**
@@ -87,6 +89,8 @@ export class LiveTracker {
     klosok: { failures: 0, nextAt: 0 },
   };
   private readonly history = new Map<string, { lat: number; lon: number; heading: number | null; seen: number }>();
+  /** For vehicles that have not moved yet: the heading of the route they are on (iMPK names the destination). */
+  private readonly routeHeadings = new Map<string, number>();
   private readonly now: () => number;
 
   constructor(private readonly deps: TrackerDeps) {
@@ -129,6 +133,19 @@ export class LiveTracker {
     return last !== null && now - last.at <= withinMs;
   }
 
+  /** Route headings for the vehicles whose own movement has not given one yet. */
+  private async headingsFromRoute(vehicles: LiveVehicle[], destinations: Map<string, string>) {
+    const { routeHeading } = this.deps;
+    if (!routeHeading) return;
+    for (const vehicle of vehicles) {
+      if (this.history.get(vehicle.id)?.heading != null) continue;
+      const destination = destinations.get(vehicle.id);
+      const heading = destination ? await routeHeading(vehicle.line, destination, vehicle.lat, vehicle.lon).catch(() => null) : null;
+      if (heading === null) this.routeHeadings.delete(vehicle.id);
+      else this.routeHeadings.set(vehicle.id, heading);
+    }
+  }
+
   private fresh(name: SourceName, maxAgeMs: number, now: number) {
     const last = this.last[name];
     if (!last || now - last.at > maxAgeMs) return [];
@@ -150,6 +167,7 @@ export class LiveTracker {
           const body = await impk.session.fetchText(impkUrl(impk.url, 'getPositions', { shortcut: 'true' }), { fetchImpl });
           const parsed = parseImpkPositions(body, { now: this.now(), isTram: (line, hint) => isTram(line, hint) });
           const names = this.deps.stopNames ? await this.deps.stopNames().catch(() => null) : null;
+          await this.headingsFromRoute(parsed.vehicles, parsed.destinations);
           const vehicles = parsed.vehicles.map((vehicle) => {
             const destination = parsed.destinations.get(vehicle.id);
             const name = destination ? names?.get(destination) : undefined;
@@ -192,7 +210,12 @@ export class LiveTracker {
       ...klosok,
     ].map((vehicle) => this.withHeading(vehicle, now));
 
-    for (const [id, entry] of this.history) if (now - entry.seen > 300_000) this.history.delete(id);
+    for (const [id, entry] of this.history) {
+      if (now - entry.seen > 300_000) {
+        this.history.delete(id);
+        this.routeHeadings.delete(id);
+      }
+    }
     return { vehicles, at: now, status: structuredCloneStatus(this.status) };
   }
 
@@ -205,6 +228,8 @@ export class LiveTracker {
           ? bearingDegrees(previous.lat, previous.lon, vehicle.lat, vehicle.lon)
           : previous.heading;
     }
+    // Not moved yet: the route's own direction, when the feed says where it is going.
+    if (heading === null) heading = this.routeHeadings.get(vehicle.id) ?? null;
     const moved = !previous || distanceMeters(previous.lat, previous.lon, vehicle.lat, vehicle.lon) >= HEADING_MIN_METERS;
     this.history.set(vehicle.id, {
       lat: moved ? vehicle.lat : previous!.lat,

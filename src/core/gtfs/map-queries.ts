@@ -83,6 +83,27 @@ export const getStopsInBBox = (db: Db, box: BBox, limit = 400) =>
   );
 
 /** What Kłosok's trip and route ids mean in the installed timetable. */
+/**
+ * Post symbol (stop_code) of the last stop of each of a line's shapes: where
+ * that variant is heading. One pass over the line's trips, then a primary-key
+ * lookup per shape.
+ */
+export const getLineTermini = async (db: Db, line: string): Promise<Map<number, string>> => {
+  const rows = await db.all<{ shapeIdx: number; code: string | null }>(
+    `SELECT v.shape_idx AS shapeIdx,
+            (SELECT s.code FROM stop_times st JOIN stops s ON s.stop_idx = st.stop_idx
+              WHERE st.trip_idx = v.trip_idx ORDER BY st.seq DESC LIMIT 1) AS code
+       FROM (SELECT t.shape_idx, MIN(t.trip_idx) AS trip_idx
+               FROM trips t JOIN routes r ON r.route_idx = t.route_idx
+              WHERE r.short_name = ? AND t.shape_idx IS NOT NULL
+              GROUP BY t.shape_idx) v`,
+    [line],
+  );
+  const termini = new Map<number, string>();
+  for (const row of rows) if (row.code) termini.set(row.shapeIdx, String(row.code));
+  return termini;
+};
+
 /** Stop names by post symbol (stop_code), as live feeds name their stops. */
 export const getStopNamesByCode = async (db: Db): Promise<Map<string, string>> => {
   const rows = await db.all<{ code: string; name: string }>('SELECT code, name FROM stops WHERE code IS NOT NULL AND code <> \'\'');

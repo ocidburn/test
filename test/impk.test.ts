@@ -56,6 +56,39 @@ describe('iMPK getPositions', () => {
 });
 
 describe('tracker with iMPK', () => {
+  test('a vehicle that has not moved points along its route, then follows its movement', async () => {
+    let now = SERVER_AT + 1_000;
+    let body = JSON.stringify(['2026-10-21 13:40:50', { v: 1, x: 17.03, y: 51.1, l: '4', t: 't', d: '30301', e: 0 }]);
+    const asked: string[] = [];
+    const tracker = new LiveTracker({
+      lines: async () => ({ trams: ['4'], buses: [] }),
+      isTram,
+      resolver: { byTripId: async () => null, byRouteId: async () => null, hasLine: async () => true },
+      fetchImpl: jest.fn(async () => {
+        throw new Error('offline');
+      }),
+      now: () => now,
+      impk: async () => ({ url: 'https://impk.example/', session: { fetchText: async () => body } }),
+      routeHeading: async (line, destination) => {
+        asked.push(`${line}->${destination}`);
+        return 180;
+      },
+    });
+    let snapshot = await tracker.poll();
+    expect(snapshot.vehicles[0].heading).toBe(180);
+    // Standing still: the route heading stays, and is not looked up again.
+    now += 10_000;
+    snapshot = await tracker.poll();
+    expect(snapshot.vehicles[0].heading).toBe(180);
+    expect(asked).toEqual(['4->30301']);
+    // Moving east: its own movement wins.
+    now += 10_000;
+    body = JSON.stringify(['2026-10-21 13:41:10', { v: 1, x: 17.032, y: 51.1, l: '4', t: 't', d: '30301', e: 0 }]);
+    snapshot = await tracker.poll();
+    expect(snapshot.vehicles[0].heading).toBeGreaterThan(80);
+    expect(snapshot.vehicles[0].heading).toBeLessThan(100);
+  });
+
   const resolver: TripResolver = { byTripId: async () => null, byRouteId: async () => null, hasLine: async () => true };
   const lines = async () => ({ trams: ['3', '18'], buses: ['715'] });
 

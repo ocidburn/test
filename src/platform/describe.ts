@@ -1,7 +1,7 @@
 import type { Db } from '../core/db';
-import { getVariants } from '../core/gtfs/map-queries';
+import { getLineTermini, getVariants } from '../core/gtfs/map-queries';
 import { buildActiveOn, getVariantProfile } from '../core/gtfs/trip-queries';
-import { matchVariant, type Variant } from '../core/realtime/route-match';
+import { headingFromRoute, matchVariant, type Variant } from '../core/realtime/route-match';
 import { describeRun, type RunDescription, type VariantProfile } from '../core/realtime/trip-match';
 import type { LiveVehicle } from '../core/realtime/types';
 
@@ -13,10 +13,12 @@ import type { LiveVehicle } from '../core/realtime/types';
 
 const variantsByLine = new Map<string, Variant[]>();
 const profileByShape = new Map<number, VariantProfile | null>();
+const terminiByLine = new Map<string, Promise<Map<number, string>>>();
 
 export const clearDescribeCache = () => {
   variantsByLine.clear();
   profileByShape.clear();
+  terminiByLine.clear();
 };
 
 const variantsOf = async (db: Db, line: string): Promise<Variant[]> => {
@@ -32,6 +34,22 @@ const profileOf = async (db: Db, variant: Variant, line: string): Promise<Varian
   const profile = await getVariantProfile(db, variant.shapeIdx, line, variant.headsign);
   profileByShape.set(variant.shapeIdx, profile);
   return profile;
+};
+
+/** The heading of the line's route towards `destination` (a post symbol) at a point. */
+export const routeHeading = async (db: Db, line: string, destination: string, lat: number, lon: number): Promise<number | null> => {
+  const variants = await variantsOf(db, line);
+  let termini = terminiByLine.get(line);
+  if (!termini) {
+    termini = getLineTermini(db, line);
+    terminiByLine.set(line, termini);
+  }
+  const byShape = await termini;
+  return headingFromRoute(
+    variants.map((variant) => ({ ...variant, terminus: byShape.get(variant.shapeIdx) ?? null })),
+    { lat, lon },
+    destination,
+  );
 };
 
 export type ActiveOn = (serviceIdx: number, dateKey: number) => boolean;

@@ -39,6 +39,27 @@ export const nextStop = <S extends { along: number }>(stops: S[], along: number)
 
 export type VariantMatch ={ variant: Variant; projection: Projection; score: number };
 
+/**
+ * The heading of a vehicle that has not moved yet, from the route it is on:
+ * among the line's variants ending at `destination` (a post symbol), the
+ * nearest one's bearing at the vehicle. Null when no such variant runs past
+ * it — distance alone does not tell the two directions apart.
+ */
+export const headingFromRoute = (
+  variants: (Variant & { terminus: string | null })[],
+  vehicle: { lat: number; lon: number },
+  destination: string,
+): number | null => {
+  let best: Projection | null = null;
+  for (const variant of variants) {
+    if (variant.terminus !== destination) continue;
+    const projection = projectOnPolyline(variant.points, vehicle.lat, vehicle.lon);
+    if (!projection || projection.distance > MAX_OFF_ROUTE_METERS) continue;
+    if (!best || projection.distance < best.distance) best = projection;
+  }
+  return best ? best.bearing : null;
+};
+
 export const matchVariant = (
   variants: Variant[],
   vehicle: { lat: number; lon: number; heading: number | null },

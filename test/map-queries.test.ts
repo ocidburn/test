@@ -1,7 +1,16 @@
 import { importGtfs } from '../src/core/gtfs/importer';
-import { getLines, getStopsInBBox, getVariants, getVariantStops, lineSets, timetableResolver } from '../src/core/gtfs/map-queries';
+import {
+  getLines,
+  getLineTermini,
+  getStopNamesByCode,
+  getStopsInBBox,
+  getVariants,
+  getVariantStops,
+  lineSets,
+  timetableResolver,
+} from '../src/core/gtfs/map-queries';
 import { markerKind } from '../src/core/lines';
-import { matchVariant } from '../src/core/realtime/route-match';
+import { headingFromRoute, matchVariant } from '../src/core/realtime/route-match';
 import { buildFixtureZip } from './fixtures/gtfs';
 import { openTestDb } from './sqljs-db';
 
@@ -35,6 +44,25 @@ test('variants of a line carry their headsign and geometry, and match a vehicle'
   expect(match?.variant.headsign).toBe('Oporów');
   const stops = await getVariantStops(db, match!.variant.shapeIdx);
   expect(stops.map((stop) => stop.name)).toEqual(['Rynek', 'Świdnicka', 'Oporów']);
+});
+
+test('a line\'s termini by post symbol give a standing vehicle its heading', async () => {
+  const db = await setup();
+  const variants = await getVariants(db, '4');
+  const termini = await getLineTermini(db, '4');
+  const withTermini = variants.map((variant) => ({ ...variant, terminus: termini.get(variant.shapeIdx) ?? null }));
+  expect(withTermini.map((v) => [v.headsign, v.terminus]).sort()).toEqual([
+    ['Biskupin', '40401'],
+    ['Oporów', '30301'],
+  ]);
+  // Between Rynek and Świdnicka, going to Oporów (30301): south-ish.
+  const heading = headingFromRoute(withTermini, { lat: 51.108, lon: 17.0325 }, '30301');
+  expect(heading).not.toBeNull();
+  expect(heading!).toBeGreaterThan(150);
+  expect(heading!).toBeLessThan(200);
+  // A destination no variant of the line ends at: no guess.
+  expect(headingFromRoute(withTermini, { lat: 51.108, lon: 17.0325 }, '99999')).toBeNull();
+  expect((await getStopNamesByCode(db)).get('50501')).toBe('Krzyki, pętla');
 });
 
 test('stops in view are only those a line serves', async () => {
