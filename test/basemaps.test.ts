@@ -1,7 +1,11 @@
-import { BASEMAPS, basemapById, DEFAULT_BASEMAP, keyFor, tileTemplate, type Basemap } from '../src/core/map/basemaps';
+import { BASEMAPS, basemapById, DEFAULT_BASEMAP, isThreeD, keyFor, tileTemplate, type Basemap } from '../src/core/map/basemaps';
 import { createGoogleSession, googleTileUrl, sessionUsable } from '../src/core/map/google-tiles';
 
 describe('base layers', () => {
+  test('Apple 3D views are the flyover types', () => {
+    expect(BASEMAPS.filter(isThreeD).map((b) => b.id)).toEqual(['apple-satellite-3d', 'apple-hybrid-3d']);
+  });
+
   test('ids are unique and an unknown id falls back to the default', () => {
     expect(new Set(BASEMAPS.map((b) => b.id)).size).toBe(BASEMAPS.length);
     expect(basemapById('nope').id).toBe(DEFAULT_BASEMAP);
@@ -33,7 +37,7 @@ describe('base layers', () => {
       if (b.kind !== 'xyz' && b.kind !== 'wms') continue;
       expect(b.attribution.length).toBeGreaterThan(0);
       for (const url of [b.url, b.darkUrl].filter((u): u is string => !!u)) {
-        if (b.kind === 'xyz') expect(url).toMatch(/\{z\}.*\{x\}.*\{y\}/);
+        if (b.kind === 'xyz') for (const part of ['{z}', '{x}', '{y}']) expect(url).toContain(part);
         else expect(url).toMatch(/\{minX\},\{minY\},\{maxX\},\{maxY\}/);
         expect(url.includes('{key}')).toBe(!!b.key);
       }

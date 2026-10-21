@@ -15,6 +15,7 @@ import { buildActiveOn, describeVehicle } from '../platform/describe';
 import { useFavorites } from '../state/favorites';
 import { startLive, stopLive, useLive } from '../state/live';
 import { useTimetable } from '../state/timetable';
+import { isThreeD } from '../core/map/basemaps';
 import { BasemapAttribution, BasemapTiles, useBasemapLayer } from '../ui/basemap-layer';
 import { StatusBanner } from '../ui/status-banner';
 import { lineColor, useTheme } from '../ui/theme';
@@ -68,6 +69,10 @@ export default function MapScreen() {
   const [located, setLocated] = useState(false);
   const [mapSize, setMapSize] = useState({ width: 0, height: 0 });
   const basemap = useBasemapLayer(region);
+  const threeD = isThreeD(basemap.basemap);
+  useEffect(() => {
+    mapRef.current?.animateCamera({ pitch: threeD ? 60 : 0 }, { duration: 600 });
+  }, [threeD]);
   const [delays, setDelays] = useState<Map<string, number | null>>(() => new Map());
   const variantsCache = useRef(new Map<string, Variant[]>());
   const now = useNow(5_000);
@@ -246,7 +251,11 @@ export default function MapScreen() {
     );
   };
 
-  const asked = status ? Object.entries(status).filter(([, s]) => s.at !== null && !s.idle) : [];
+  // While iMPK answers, the map does not depend on MPK: a failing MPK is only on the Data screen.
+  const impkUp = !!status?.impk.ok;
+  const asked = status
+    ? Object.entries(status).filter(([name, s]) => s.at !== null && !s.idle && !(impkUp && (name === 'mpk' || name === 'openData')))
+    : [];
   const failing = asked.filter(([, s]) => !s.ok).map(([name]) => name);
   const allFailing = failing.length > 0 && failing.length === asked.length;
 
@@ -267,7 +276,8 @@ export default function MapScreen() {
         showsUserLocation={located}
         showsPointsOfInterests={false}
         showsBuildings={false}
-        pitchEnabled={false}
+        // Apple's 3D views need a tilted camera; elsewhere the map stays flat.
+        pitchEnabled={threeD}
         rotateEnabled={false}
         mapType={basemap.mapType}
         toolbarEnabled={false}

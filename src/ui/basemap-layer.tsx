@@ -89,7 +89,8 @@ export const useBasemapLayer = (region: Region): BasemapLayer => {
     }
     return {
       basemap,
-      mapType: 'standard',
+      // Under the tiles, a map type without Apple's street names: Google draws its own.
+      mapType: 'satellite',
       tile: { kind: 'xyz', url: googleTileUrl(session, googleKey), maxZoom: 22, cacheSeconds: GOOGLE_CACHE_SECONDS, cacheDir: null },
       attribution: `Google${copyright ? ` · ${copyright}` : ''}`,
       problem: null,
@@ -100,7 +101,8 @@ export const useBasemapLayer = (region: Region): BasemapLayer => {
   if (!url) return { basemap, mapType: 'mutedStandard', tile: null, attribution: null, problem: null };
   return {
     basemap,
-    mapType: 'standard',
+    // Apple's street names stay over photos (hybrid); maps draw their own (satellite has none).
+    mapType: basemap.labels ? 'hybrid' : 'satellite',
     tile: { kind: basemap.kind, url, maxZoom: basemap.maxZoom, cacheSeconds: basemap.cacheSeconds, cacheDir: cacheDir(basemap.id + (dark ? '-dark' : '')) },
     attribution: basemap.attribution,
     problem: null,

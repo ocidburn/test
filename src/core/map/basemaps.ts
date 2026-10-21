@@ -23,6 +23,8 @@ export type Basemap =
       attribution: string;
       /** How long a tile may be kept on the phone before it is asked again. */
       cacheSeconds: number;
+      /** Apple's street names over the tiles: for photos, which have none of their own. */
+      labels?: boolean;
     })
   | (Common & { kind: 'google'; mapType: 'roadmap' | 'satellite' | 'terrain'; hybrid: boolean });
 
@@ -126,25 +128,32 @@ export const BASEMAPS: Basemap[] = [
     maxZoom: 20,
     attribution: 'Ortofotomapa: GUGiK, geoportal.gov.pl',
     cacheSeconds: 30 * 86_400,
+    labels: true,
   },
-  // Wrocław's own 5 cm orthophoto, 2024 (licence: no restrictions). Web Mercator not confirmed yet.
+  // The same orthophoto through GUGiK's WMTS (cached tiles, Web Mercator matrix set since 2021): a trial,
+  // the layer and matrix-set names are not confirmed for EPSG:3857.
   {
-    id: 'wroclaw-orto',
-    name: 'Ортофото Вроцлава 2024 (проба)',
+    id: 'gugik-orto-wmts',
+    name: 'Ортофото Польши, WMTS (проба)',
     group: 'aerial',
-    kind: 'wms',
+    kind: 'xyz',
     url:
-      'https://gis1.um.wroc.pl/arcgis/services/ogc/OGC_ortofoto_2024/MapServer/WMSServer?SERVICE=WMS&VERSION=1.1.1&REQUEST=GetMap' +
-      '&LAYERS=0&STYLES=&SRS=EPSG:3857&BBOX={minX},{minY},{maxX},{maxY}&WIDTH={width}&HEIGHT={height}&FORMAT=image/jpeg',
-    maxZoom: 21,
-    attribution: 'Źródło: SIP Wrocław, www.geoportal.wroclaw.pl',
+      'https://mapy.geoportal.gov.pl/wss/service/PZGIK/ORTO/WMTS/StandardResolution?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0' +
+      '&LAYER=ORTOFOTOMAPA&STYLE=default&FORMAT=image/jpeg&TILEMATRIXSET=EPSG:3857&TILEMATRIX=EPSG:3857:{z}&TILEROW={y}&TILECOL={x}',
+    maxZoom: 19,
+    attribution: 'Ortofotomapa: GUGiK, geoportal.gov.pl',
     cacheSeconds: 30 * 86_400,
+    labels: true,
   },
   { id: 'google-roadmap', name: 'Карта', group: 'google', kind: 'google', mapType: 'roadmap', hybrid: false },
   { id: 'google-satellite', name: 'Спутник', group: 'google', kind: 'google', mapType: 'satellite', hybrid: false },
   { id: 'google-hybrid', name: 'Гибрид', group: 'google', kind: 'google', mapType: 'satellite', hybrid: true },
   { id: 'google-terrain', name: 'Рельеф', group: 'google', kind: 'google', mapType: 'terrain', hybrid: false },
 ];
+
+/** Apple's 3D views: the camera tilts so buildings stand up. */
+export const isThreeD = (basemap: Basemap) =>
+  basemap.kind === 'apple' && (basemap.mapType === 'satelliteFlyover' || basemap.mapType === 'hybridFlyover');
 
 export const basemapById = (id: string): Basemap => BASEMAPS.find((b) => b.id === id) ?? BASEMAPS[0];
 
